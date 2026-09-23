@@ -183,7 +183,12 @@
     box-shadow: 0 1px 3px rgba(0,0,0,.3);
   }
   .attrib { font-size: 12.5px; color: var(--moz-grey); margin: 10px 0 0; }
-  #pacHost gmp-place-autocomplete { display: block; width: 100%; }
+  .sugg { position: fixed; z-index: 70; list-style: none; margin: 0; padding: 4px 0; background: #fff; border: 1px solid var(--moz-line); border-radius: 4px; box-shadow: var(--shadow); max-height: 280px; overflow-y: auto; }
+  .sugg li { padding: 8px 12px; cursor: pointer; font-size: 14px; line-height: 1.3; }
+  .sugg li b { display: block; font-weight: 700; color: var(--moz-dark); }
+  .sugg li span { display: block; color: var(--moz-grey); font-size: 12.5px; }
+  .sugg li.on, .sugg li:hover { background: var(--moz-wash); }
+  .sugg li.attr, .sugg li.attr:hover { cursor: default; font-size: 11px; color: var(--moz-grey); text-align: right; padding: 4px 12px 2px; background: transparent; }
 
   .two { display: grid; grid-template-columns: 1fr; gap: 14px; align-items: start; }
   @media (min-width: 1200px) { .two { grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr); } }
@@ -256,15 +261,11 @@
     <aside class="rail">
       <section class="step" id="step1">
         <div class="stephead"><span class="num">1</span><h2>Whose business?</h2></div>
-        <div id="pacWrap" hidden>
-          <label for="pac">Search Google for the business</label>
-          <div id="pacHost"></div>
-          <p class="hint" style="margin:6px 0 10px">Start typing the name or address, pick it from the list, and the fields below fill in.</p>
-        </div>
         <label for="bizName">Business name</label>
-        <input type="text" id="bizName" placeholder="Oakwood Family Dental" autocomplete="off">
+        <input type="text" id="bizName" placeholder="Oakwood Family Dental" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sugg">
+        <p class="hint" id="pacHint" hidden style="margin:4px 0 0">Start typing and pick from the Google list. The address fills in by itself.</p>
         <label for="bizStreet">Street address</label>
-        <input type="text" id="bizStreet" placeholder="1200 Maple Ave" autocomplete="off">
+        <input type="text" id="bizStreet" placeholder="1200 Maple Ave" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sugg">
         <div class="row">
           <div><label for="bizCity">City</label><input type="text" id="bizCity" placeholder="Springfield" autocomplete="off"></div>
           <div><label for="bizState">State or province</label><input type="text" id="bizState" placeholder="IL" autocomplete="off"></div>
@@ -406,6 +407,7 @@
   </div>
 </div>
 <div class="tip" id="tip" role="tooltip" hidden></div>
+<ul class="sugg" id="sugg" role="listbox" hidden></ul>
 
 <script>
 (function () {
@@ -812,23 +814,58 @@
     if (state.scan) renderMap(false);
   }
 
-  /* Google address dropdown, fills the fields and picks the business */
-  var pacEl = null;
+  /* Google address dropdown on the name and street fields, fills the fields and picks the business */
+  var pac = { ready: false, Suggestion: null, Token: null, token: null, items: [], active: -1, input: null, timer: null, seq: 0 };
   function setupAutocomplete() {
-    if (pacEl || !maps.ready || !google.maps.importLibrary) return;
+    if (pac.ready || !maps.ready || !google.maps.importLibrary) return;
     google.maps.importLibrary('places').then(function (lib) {
-      var Ctor = lib.PlaceAutocompleteElement || (google.maps.places && google.maps.places.PlaceAutocompleteElement);
-      if (!Ctor) return;
-      pacEl = new Ctor({ includedRegionCodes: [$('bizCountry').value.toLowerCase()] });
-      pacEl.id = 'pac';
-      var host = $('pacHost'); host.innerHTML = ''; host.appendChild(pacEl);
-      $('pacWrap').hidden = false;
-      pacEl.addEventListener('gmp-select', function (ev) { var pred = ev.placePrediction; if (pred && pred.toPlace) onPlacePicked(pred.toPlace()); });
-      pacEl.addEventListener('gmp-placeselect', function (ev) { if (ev.place) onPlacePicked(ev.place); });
+      if (!lib.AutocompleteSuggestion || !lib.AutocompleteSessionToken) return;
+      pac.Suggestion = lib.AutocompleteSuggestion; pac.Token = lib.AutocompleteSessionToken; pac.ready = true;
+      $('pacHint').hidden = false;
     }).catch(function () { /* dropdown unavailable, the fields still work by hand */ });
   }
+  function ftext(v) { if (!v) return ''; if (typeof v === 'string') return v; if (v.text) return v.text; try { return String(v); } catch (e) { return ''; } }
+  function hideSugg() {
+    var el = $('sugg'); el.hidden = true; el.innerHTML = ''; pac.items = []; pac.active = -1;
+    if (pac.input) pac.input.setAttribute('aria-expanded', 'false');
+  }
+  function placeSugg() {
+    if (!pac.input) return;
+    var el = $('sugg'), r = pac.input.getBoundingClientRect();
+    el.style.left = r.left + 'px'; el.style.top = (r.bottom + 4) + 'px'; el.style.width = r.width + 'px';
+  }
+  function renderSugg() {
+    var el = $('sugg');
+    if (!pac.items.length) { hideSugg(); return; }
+    el.innerHTML = pac.items.map(function (it, i) {
+      return '<li role="option" data-i="' + i + '" class="' + (i === pac.active ? 'on' : '') + '"><b>' + esc(it.main) + '</b><span>' + esc(it.secondary) + '</span></li>';
+    }).join('') + '<li class="attr">Suggestions by Google</li>';
+    el.hidden = false; placeSugg();
+    pac.input.setAttribute('aria-expanded', 'true');
+  }
+  function fetchSugg(input) {
+    var text = input.value.trim();
+    pac.input = input;
+    if (!pac.ready || text.length < 3) { hideSugg(); return; }
+    if (!pac.token) pac.token = new pac.Token();
+    pac.seq += 1; var seq = pac.seq;
+    var req = { input: text, sessionToken: pac.token, includedRegionCodes: [$('bizCountry').value.toLowerCase()], language: 'en' };
+    pac.Suggestion.fetchAutocompleteSuggestions(req).then(function (res) {
+      if (seq !== pac.seq || pac.input !== input) return;
+      pac.items = (res.suggestions || []).map(function (s) {
+        var p = s.placePrediction; if (!p) return null;
+        return { pred: p, main: ftext(p.mainText) || ftext(p.text), secondary: ftext(p.secondaryText) };
+      }).filter(Boolean).slice(0, 6);
+      pac.active = -1; renderSugg();
+    }).catch(function () { hideSugg(); });
+  }
+  function chooseSugg(i) {
+    var it = pac.items[i]; if (!it) return;
+    hideSugg(); pac.token = null;
+    onPlacePicked(it.pred.toPlace());
+  }
   function onPlacePicked(place) {
-    place.fetchFields({ fields: ['id', 'displayName', 'formattedAddress', 'addressComponents', 'location', 'types'] }).then(function () {
+    place.fetchFields({ fields: ['displayName', 'formattedAddress', 'addressComponents', 'location', 'types'] }).then(function () {
       addUsage('pro', 1);
       var comps = place.addressComponents || [];
       function comp(type, short) {
@@ -1112,7 +1149,30 @@
   }
   $('findBtn').addEventListener('click', findBusiness);
   $('runBtn').addEventListener('click', runScan);
-  ['bizName', 'bizStreet', 'bizCity', 'bizState', 'bizZip'].forEach(function (id) { $(id).addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); findBusiness(); } }); });
+  ['bizCity', 'bizState', 'bizZip'].forEach(function (id) { $(id).addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); findBusiness(); } }); });
+  ['bizName', 'bizStreet'].forEach(function (id) {
+    var input = $(id);
+    input.addEventListener('input', function () {
+      clearTimeout(pac.timer); pac.input = input;
+      pac.timer = setTimeout(function () { fetchSugg(input); }, 250);
+    });
+    input.addEventListener('keydown', function (e) {
+      var open = !$('sugg').hidden && pac.input === input;
+      if (open && e.key === 'ArrowDown') { e.preventDefault(); pac.active = Math.min(pac.items.length - 1, pac.active + 1); renderSugg(); return; }
+      if (open && e.key === 'ArrowUp') { e.preventDefault(); pac.active = Math.max(0, pac.active - 1); renderSugg(); return; }
+      if (open && e.key === 'Escape') { e.preventDefault(); hideSugg(); return; }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (open && pac.active >= 0) { chooseSugg(pac.active); return; }
+        if (open && pac.items.length === 1) { chooseSugg(0); return; }
+        hideSugg(); findBusiness();
+      }
+    });
+    input.addEventListener('blur', function () { setTimeout(function () { if (document.activeElement !== input) hideSugg(); }, 180); });
+  });
+  $('sugg').addEventListener('mousedown', function (e) { e.preventDefault(); });
+  $('sugg').addEventListener('click', function (e) { var li = e.target.closest('li[data-i]'); if (li) chooseSugg(Number(li.getAttribute('data-i'))); });
+  window.addEventListener('resize', function () { if (!$('sugg').hidden) placeSugg(); });
   $('kw').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); runScan(); } });
   $('sampleBtn').addEventListener('click', function () {
     state.scan = buildSample(); state.sel = null; state.gridFor = null; state.showComp = false;
@@ -1137,7 +1197,7 @@
   $('flat').addEventListener('mouseout', function (e) { if (e.target.closest('.dot')) hideTip(); });
   document.addEventListener('focusin', function (e) { var d = e.target.closest ? e.target.closest('.dot') : null; if (d) showTip(d); });
   document.addEventListener('focusout', hideTip);
-  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('scroll', function () { hideTip(); if (!$('sugg').hidden) placeSugg(); }, { passive: true });
   $('leader').addEventListener('click', function (e) { var b = e.target.closest('button[data-grid]'); if (!b) return; var id = b.getAttribute('data-grid'); state.gridFor = state.gridFor === id ? state.scan.business.id : id; renderGridFor(); renderMap(false); renderLeader(); });
   $('copyBtn').addEventListener('click', copySummary);
   $('csvBtn').addEventListener('click', saveCsv);
@@ -1153,10 +1213,7 @@
   });
   $('guard').addEventListener('change', function () { lsSet(LS.settings, settings()); });
   $('resetUsage').addEventListener('click', function () { lsDel(LS.usage); renderUsage(); });
-  $('bizCountry').addEventListener('change', function () {
-    lsSet(LS.settings, settings());
-    if (pacEl) { try { pacEl.includedRegionCodes = [$('bizCountry').value.toLowerCase()]; } catch (e) { /* older element */ } }
-  });
+  $('bizCountry').addEventListener('change', function () { lsSet(LS.settings, settings()); hideSugg(); });
 
   /* init */
   fillSpacing('1');
