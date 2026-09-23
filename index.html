@@ -1,0 +1,1174 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Local Grid Preview</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&family=Roboto+Slab:wght@400;700&display=swap">
+<style>
+  /* Moz palette, from the Moz Brand Guide (Confluence, UX space) and the in product UI spec */
+  :root {
+    --moz-dark: #272733;      /* Dark Gray, primary text */
+    --moz-grey: #565e66;      /* Core Grey, secondary text */
+    --moz-line: #bcc5c5;      /* secondary CTA border */
+    --moz-line-2: #dfe6e9;
+    --moz-ground: #f0f7f7;    /* Light Grey */
+    --moz-panel: #ffffff;
+    --moz-blue: #4dbdeb;      /* Moz Blue */
+    --moz-blue-dark: #0075a8; /* Dark Blue */
+    --moz-cta: #005780;       /* primary CTA fill */
+    --moz-cta-border: #004566;
+    --moz-link: #0077b3;
+    --moz-wash: #e2f3f9;      /* Light Blue */
+    --moz-teal: #259983;
+    --moz-yellow: #ffd262;
+    --moz-yellow-wash: #fff7e7;
+    --moz-red: #fc4949;
+    --moz-red-dark: #a81e1e;
+    --moz-red-wash: #ffeff4;
+    --moz-green-wash: #e8ffd9;
+    /* rank ladder, dark green for #1 through red for 21+, grey for no results */
+    --rk1: #258627; --rk1-ink: #ffffff;
+    --rk2: #32aa3a; --rk2-ink: #ffffff;
+    --rk3: #5ec93a; --rk3-ink: #272733;
+    --rk4: #ffd262; --rk4-ink: #272733;
+    --rk5: #ff9f2c; --rk5-ink: #272733;
+    --rk6: #fc4949; --rk6-ink: #ffffff;
+    --rk7: #a81e1e; --rk7-ink: #ffffff;
+    --rk0: #565e66; --rk0-ink: #ffffff;
+    --shadow: 0 1px 3px rgba(39,39,51,.12), 0 8px 24px -16px rgba(39,39,51,.25);
+    color-scheme: light;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--moz-ground); color: var(--moz-dark);
+    font-family: "Lato", "Helvetica Neue", Arial, sans-serif; font-size: 15px; line-height: 1.45;
+  }
+  h1, h2, h3 { margin: 0; font-family: "Roboto Slab", Georgia, serif; font-weight: 700; text-wrap: balance; }
+  a { color: var(--moz-link); }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible, input:focus-visible, select:focus-visible, .dot:focus-visible { outline: 2px solid var(--moz-blue-dark); outline-offset: 2px; }
+  [hidden] { display: none !important; }
+  .sr { position: absolute; left: -9999px; }
+
+  /* top bar */
+  .bar {
+    background: var(--moz-panel); border-bottom: 1px solid var(--moz-line-2);
+    padding-block: 10px; padding-inline: 16px;
+    display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+    position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .wm { font-weight: 900; font-size: 26px; letter-spacing: -0.03em; color: var(--moz-blue-dark); line-height: 1; }
+  .prod { font-size: 20px; font-weight: 400; color: var(--moz-dark); line-height: 1; }
+  .pill { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--moz-blue-dark); background: var(--moz-wash); border-radius: 4px; padding: 4px 8px; }
+  .barright { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; }
+  .kwsel { padding: 8px 10px; border: 1px solid var(--moz-line); border-radius: 4px; background: var(--moz-panel); min-width: 200px; max-width: 320px; }
+  .iconbtn { border: 1px solid var(--moz-line); background: var(--moz-panel); border-radius: 4px; width: 38px; height: 38px; display: inline-flex; align-items: center; justify-content: center; color: var(--moz-grey); }
+  .iconbtn:hover { border-color: var(--moz-blue-dark); color: var(--moz-blue-dark); }
+  .iconbtn svg { width: 20px; height: 20px; }
+
+  .app { max-width: 1320px; margin: 0 auto; padding-block: 18px 48px; padding-inline: 16px; }
+  .layout { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 20px; align-items: start; }
+  @media (max-width: 960px) { .layout { grid-template-columns: 1fr; } }
+
+  /* left rail */
+  .rail { display: grid; gap: 14px; }
+  .step { background: var(--moz-panel); border: 1px solid var(--moz-line-2); border-radius: 4px; padding: 16px; }
+  .stephead { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .stephead .num { width: 26px; height: 26px; border-radius: 50%; background: var(--moz-cta); color: #fff; font-weight: 700; font-size: 13px; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+  .stephead h2 { font-size: 17px; }
+  .step.done .num { background: var(--moz-teal); }
+  label { display: block; font-size: 13px; font-weight: 700; color: var(--moz-grey); margin: 10px 0 4px; }
+  .step label:first-of-type { margin-top: 0; }
+  input[type="text"], input[type="password"], select {
+    width: 100%; padding: 9px 10px; border: 1px solid var(--moz-line); border-radius: 4px;
+    background: #fff; color: var(--moz-dark); font: inherit;
+  }
+  input::placeholder { color: #98a2a8; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 10px 14px; border-radius: 4px; border: 1px solid var(--moz-line); background: #fff;
+    font-weight: 700; margin-top: 12px; min-height: 40px; color: var(--moz-dark);
+  }
+  .btn.primary { background: var(--moz-cta); border-color: var(--moz-cta-border); color: #fff; }
+  .btn.primary:hover { background: var(--moz-cta-border); }
+  .btn.wide { width: 100%; }
+  .btn.small { padding: 5px 10px; min-height: 30px; font-size: 13px; margin-top: 0; }
+  .btn:disabled { opacity: .55; cursor: default; }
+  .link { border: 0; background: none; padding: 0; color: var(--moz-link); font-weight: 700; text-decoration: underline; }
+  .hint { font-size: 13px; color: var(--moz-grey); margin: 10px 0 0; }
+  .msg { margin-top: 12px; padding: 10px 12px; border-radius: 4px; font-size: 14px; line-height: 1.4; background: var(--moz-wash); color: var(--moz-dark); border-left: 4px solid var(--moz-blue-dark); }
+  .msg.err { background: var(--moz-red-wash); border-left-color: var(--moz-red-dark); }
+  .msg.ok { background: var(--moz-green-wash); border-left-color: var(--rk1); }
+  .msg.warn { background: var(--moz-yellow-wash); border-left-color: #bd5500; }
+  .prog { height: 6px; border-radius: 3px; background: var(--moz-ground); margin-top: 12px; overflow: hidden; }
+  .prog i { display: block; height: 100%; width: 0; background: var(--moz-blue-dark); transition: width .2s ease; }
+  .found { margin-top: 12px; padding: 12px; border-radius: 4px; background: var(--moz-wash); }
+  .found b { display: block; font-weight: 700; }
+  .found .addr { color: var(--moz-grey); font-size: 14px; }
+  .cands { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+  .cands button, .recent button { width: 100%; text-align: left; padding: 8px 10px; border-radius: 4px; border: 1px solid var(--moz-line-2); background: #fff; font-size: 14px; }
+  .cands button b, .recent button b { display: block; }
+  .cands button span, .recent button span { color: var(--moz-grey); font-size: 13px; }
+  .recent { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  h2.mini { font-family: "Lato", sans-serif; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--moz-grey); margin-bottom: 8px; }
+
+  /* main */
+  .main { display: grid; gap: 14px; min-width: 0; }
+  .card { background: var(--moz-panel); border: 1px solid var(--moz-line-2); border-radius: 4px; padding: 16px; min-width: 0; }
+  .titlebar { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+  .titlebar h1 { font-size: 24px; }
+  .titlebar .sub { color: var(--moz-grey); margin-top: 4px; font-size: 14px; }
+  .titlebar .kwline { margin-top: 8px; font-size: 15px; }
+  .titlebar .kwline b { color: var(--moz-dark); }
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 5px 10px; border-radius: 4px; }
+  .badge.sample { background: var(--moz-yellow-wash); color: #7a4b12; border: 1px dashed #e4b34f; }
+  .badge.live { background: var(--moz-green-wash); color: var(--rk1); }
+  .bizmeta { text-align: right; font-size: 14px; color: var(--moz-grey); }
+  .bizmeta .stars { color: var(--moz-dark); font-weight: 700; }
+  @media (max-width: 640px) { .bizmeta { text-align: left; } }
+  .sampnote { width: 100%; font-size: 14px; color: #7a4b12; background: var(--moz-yellow-wash); padding: 8px 12px; border-radius: 4px; }
+
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  @media (max-width: 760px) { .stats { grid-template-columns: 1fr 1fr; } }
+  .stat { background: var(--moz-panel); border: 1px solid var(--moz-line-2); border-radius: 4px; padding: 12px 14px; }
+  .stat .l { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--moz-grey); }
+  .stat .v { font-family: "Roboto Slab", Georgia, serif; font-size: 28px; font-weight: 700; line-height: 1.1; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .stat .s { font-size: 13px; color: var(--moz-grey); margin-top: 2px; }
+  .read { margin: 0; color: var(--moz-grey); font-size: 15px; padding: 0 2px; }
+
+  .maphead { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .legend { display: flex; gap: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--moz-grey); align-items: center; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .legend i { width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; font-style: normal; }
+  .mapctl { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+  .mapctl select { width: auto; max-width: 260px; padding: 6px 8px; }
+  .check { display: inline-flex; align-items: center; gap: 6px; font-weight: 400; margin: 0; color: var(--moz-dark); font-size: 14px; cursor: pointer; }
+  .check input { margin: 0; }
+  .mapwrap { position: relative; width: 100%; height: 520px; border-radius: 4px; overflow: hidden; background: var(--moz-ground); border: 1px solid var(--moz-line-2); }
+  @media (max-width: 760px) { .mapwrap { height: 420px; } }
+  .map { position: absolute; inset: 0; }
+  .flat { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px 20px 84px; background:
+    repeating-linear-gradient(0deg, transparent 0 39px, rgba(39,39,51,.06) 39px 40px),
+    repeating-linear-gradient(90deg, transparent 0 39px, rgba(39,39,51,.06) 39px 40px), #e9f1f1; }
+  .flatgrid { display: grid; gap: 6px; width: min(100%, 480px, calc(100% - 20px)); }
+  .flatgrid .cellwrap { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; position: relative; }
+  .mapnote { position: absolute; left: 12px; right: 12px; bottom: 12px; background: rgba(255,255,255,.96); border-left: 4px solid var(--moz-blue-dark); border-radius: 4px; padding: 10px 12px; font-size: 13.5px; box-shadow: var(--shadow); z-index: 5; }
+  .mapnote.err { border-left-color: var(--moz-red-dark); }
+  .gm-layer { position: absolute; left: 0; top: 0; }
+
+  /* dots */
+  .dot {
+    position: absolute; transform: translate(-50%, -50%); width: 30px; height: 30px; border-radius: 50%;
+    border: 2px solid rgba(255,255,255,.9); box-shadow: 0 1px 3px rgba(0,0,0,.35);
+    font-weight: 700; font-size: 12.5px; line-height: 1; padding: 0; display: inline-flex; align-items: center; justify-content: center;
+    background: var(--rk0); color: var(--rk0-ink); font-variant-numeric: tabular-nums;
+  }
+  .flatgrid .dot { position: static; transform: none; width: 34px; height: 34px; font-size: 13px; }
+  .dot.r1 { background: var(--rk1); color: var(--rk1-ink); }
+  .dot.r2 { background: var(--rk2); color: var(--rk2-ink); }
+  .dot.r3 { background: var(--rk3); color: var(--rk3-ink); }
+  .dot.r4 { background: var(--rk4); color: var(--rk4-ink); }
+  .dot.r5 { background: var(--rk5); color: var(--rk5-ink); }
+  .dot.r6 { background: var(--rk6); color: var(--rk6-ink); }
+  .dot.r7 { background: var(--rk7); color: var(--rk7-ink); }
+  .dot.sel { box-shadow: 0 0 0 3px var(--moz-dark), 0 1px 3px rgba(0,0,0,.35); z-index: 3; }
+  .dot:hover { z-index: 4; }
+  .home { position: absolute; transform: translate(-50%, -100%); width: 26px; height: 34px; pointer-events: none; z-index: 5; margin-top: -14px; }
+  .flatgrid .home { position: absolute; left: 50%; top: 0; transform: translate(-50%, -80%); width: 22px; height: 28px; margin: 0; }
+  .cm {
+    position: absolute; transform: translate(-50%, -50%); width: 26px; height: 26px; border-radius: 50%;
+    background: var(--moz-panel); border: 2px solid var(--moz-blue-dark); color: var(--moz-blue-dark);
+    font-size: 10px; font-weight: 900; display: inline-flex; align-items: center; justify-content: center; padding: 0; z-index: 2;
+    box-shadow: 0 1px 3px rgba(0,0,0,.3);
+  }
+  .attrib { font-size: 12.5px; color: var(--moz-grey); margin: 10px 0 0; }
+  #pacHost gmp-place-autocomplete { display: block; width: 100%; }
+
+  .two { display: grid; grid-template-columns: 1fr; gap: 14px; align-items: start; }
+  @media (min-width: 1200px) { .two { grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr); } }
+  .cardhead { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  .cardhead h2 { font-size: 17px; }
+  .cardhead .where { font-size: 13px; color: var(--moz-grey); }
+  .tbl-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font: inherit; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 8px; border-bottom: 1px solid var(--moz-line-2); vertical-align: middle; }
+  th { font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--moz-grey); white-space: nowrap; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.you td { background: var(--moz-wash); font-weight: 700; }
+  td .sub { display: block; font-size: 12.5px; color: var(--moz-grey); font-weight: 400; }
+  .rkchip { display: inline-flex; width: 26px; height: 26px; border-radius: 50%; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; background: var(--rk0); color: var(--rk0-ink); }
+  .rkchip.r1 { background: var(--rk1); color: var(--rk1-ink); } .rkchip.r2 { background: var(--rk2); color: var(--rk2-ink); }
+  .rkchip.r3 { background: var(--rk3); color: var(--rk3-ink); } .rkchip.r4 { background: var(--rk4); color: var(--rk4-ink); }
+  .rkchip.r5 { background: var(--rk5); color: var(--rk5-ink); } .rkchip.r6 { background: var(--rk6); color: var(--rk6-ink); }
+  .rkchip.r7 { background: var(--rk7); color: var(--rk7-ink); }
+  .youtag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--moz-blue-dark); background: #fff; border: 1px solid var(--moz-blue); border-radius: 3px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
+  .rowbtn { border: 1px solid var(--moz-line); background: #fff; border-radius: 4px; padding: 4px 8px; font-size: 12.5px; font-weight: 700; color: var(--moz-link); white-space: nowrap; }
+  .rowbtn.on { background: var(--moz-cta); border-color: var(--moz-cta-border); color: #fff; }
+  .bar2 { display: inline-block; height: 8px; border-radius: 4px; background: var(--moz-blue-dark); vertical-align: middle; margin-right: 6px; min-width: 2px; }
+  .none { color: var(--moz-grey); font-size: 14px; margin: 6px 0 0; }
+
+  .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .actions .btn { margin-top: 0; }
+  .toast { font-size: 14px; color: var(--rk1); font-weight: 700; }
+  .foot { font-size: 13px; color: var(--moz-grey); line-height: 1.5; max-width: 76ch; padding: 0 2px; }
+
+  /* tooltip */
+  .tip { position: fixed; z-index: 60; pointer-events: none; max-width: 280px; background: var(--moz-dark); color: #fff; padding: 9px 11px; border-radius: 4px; font-size: 13px; line-height: 1.35; box-shadow: var(--shadow); }
+  .tip b { display: block; font-weight: 700; margin-bottom: 2px; }
+  .tip ol { margin: 6px 0 0; padding-left: 18px; }
+  .tip li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+  .tip .you { color: var(--moz-blue); font-weight: 700; }
+
+  /* settings modal */
+  .modal { position: fixed; inset: 0; z-index: 50; background: rgba(39,39,51,.55); display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; overflow: auto; }
+  .modal .box { background: #fff; border-radius: 4px; width: min(560px, 100%); padding: 20px; box-shadow: var(--shadow); }
+  .modal .boxhead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .modal h2 { font-size: 20px; }
+  .usage { width: 100%; font-size: 13.5px; margin-top: 6px; }
+  .usage td, .usage th { padding: 6px 6px; }
+  .usage .meter { height: 6px; background: var(--moz-ground); border-radius: 3px; overflow: hidden; min-width: 90px; }
+  .usage .meter i { display: block; height: 100%; background: var(--moz-blue-dark); }
+  .usage .meter i.hot { background: #bd5500; }
+  .modal h3 { font-family: "Lato", sans-serif; font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--moz-grey); margin: 16px 0 4px; }
+  .modal ol { margin: 6px 0 0; padding-left: 20px; font-size: 14px; }
+  .modal li { margin: 3px 0; }
+
+  @media (prefers-reduced-motion: reduce) { .prog i { transition: none; } }
+</style>
+
+<header class="bar">
+  <div class="brand">
+    <span class="wm">moz</span><span class="prod">Local</span>
+    <span class="pill">Local Grid preview</span>
+  </div>
+  <div class="barright">
+    <label class="sr" for="kwSelect">Keyword</label>
+    <select id="kwSelect" class="kwsel" aria-label="Switch keyword"></select>
+    <button class="iconbtn" id="settingsBtn" aria-label="Settings" title="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"></path></svg>
+    </button>
+  </div>
+</header>
+
+<div class="app">
+  <div class="layout">
+    <aside class="rail">
+      <section class="step" id="step1">
+        <div class="stephead"><span class="num">1</span><h2>Whose business?</h2></div>
+        <div id="pacWrap" hidden>
+          <label for="pac">Search Google for the business</label>
+          <div id="pacHost"></div>
+          <p class="hint" style="margin:6px 0 10px">Start typing the name or address, pick it from the list, and the fields below fill in.</p>
+        </div>
+        <label for="bizName">Business name</label>
+        <input type="text" id="bizName" placeholder="Oakwood Family Dental" autocomplete="off">
+        <label for="bizStreet">Street address</label>
+        <input type="text" id="bizStreet" placeholder="1200 Maple Ave" autocomplete="off">
+        <div class="row">
+          <div><label for="bizCity">City</label><input type="text" id="bizCity" placeholder="Springfield" autocomplete="off"></div>
+          <div><label for="bizState">State or province</label><input type="text" id="bizState" placeholder="IL" autocomplete="off"></div>
+        </div>
+        <div class="row">
+          <div><label for="bizZip">Postcode</label><input type="text" id="bizZip" placeholder="62704" autocomplete="off"></div>
+          <div><label for="bizCountry">Country</label>
+            <select id="bizCountry">
+              <option value="US" selected>United States</option>
+              <option value="CA">Canada</option>
+              <option value="GB">United Kingdom</option>
+              <option value="IE">Ireland</option>
+              <option value="AU">Australia</option>
+              <option value="NZ">New Zealand</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn primary wide" id="findBtn">Find on Google</button>
+        <div class="found" id="found" hidden>
+          <b id="foundName"></b>
+          <span class="addr" id="foundAddr"></span>
+          <div class="hint" id="foundMeta" style="margin-top:4px"></div>
+          <div id="candWrap" hidden>
+            <div class="hint">Not the right one? Pick another:</div>
+            <ul class="cands" id="cands"></ul>
+          </div>
+        </div>
+        <div class="msg" id="msg1" hidden></div>
+      </section>
+
+      <section class="step" id="step2">
+        <div class="stephead"><span class="num">2</span><h2>What do their customers search?</h2></div>
+        <label for="kw">Keyword</label>
+        <input type="text" id="kw" placeholder="dentist, emergency plumber, pizza" autocomplete="off">
+        <div class="row">
+          <div><label for="size">Grid size</label>
+            <select id="size">
+              <option value="3">3 x 3</option>
+              <option value="5" selected>5 x 5</option>
+              <option value="7">7 x 7</option>
+              <option value="9">9 x 9</option>
+            </select>
+          </div>
+          <div><label for="spacing">Distance between dots</label><select id="spacing"></select></div>
+        </div>
+        <label for="unit">Units</label>
+        <select id="unit">
+          <option value="mi" selected>Miles</option>
+          <option value="km">Kilometres</option>
+        </select>
+        <button class="btn primary wide" id="runBtn">Search Now</button>
+        <div id="prog" hidden>
+          <div class="prog"><i id="progBar"></i></div>
+          <p class="hint" id="progText"></p>
+        </div>
+        <div class="msg" id="msg" hidden></div>
+        <p class="hint" id="costNote"></p>
+      </section>
+
+      <section class="step" id="recentSec" hidden>
+        <h2 class="mini">Recent searches</h2>
+        <ul class="recent" id="recent"></ul>
+        <button class="btn small" id="clearRecent" style="margin-top:10px">Clear list</button>
+      </section>
+
+      <section class="step">
+        <p class="hint" style="margin:0">New here? <button class="link" id="sampleBtn">Load the sample business</button> to see how the grid works before running a real one.</p>
+      </section>
+    </aside>
+
+    <main class="main">
+      <section class="card titlebar" id="titlebar"></section>
+      <section class="stats" id="stats"></section>
+      <p class="read" id="read"></p>
+
+      <section class="card">
+        <div class="maphead">
+          <div class="legend" id="legend"></div>
+          <div class="mapctl">
+            <label class="check" for="showComp"><input type="checkbox" id="showComp"> Show competitor locations</label>
+            <label class="sr" for="gridFor">Show ranks for</label>
+            <select id="gridFor" aria-label="Show ranks for"></select>
+          </div>
+        </div>
+        <div class="mapwrap">
+          <div id="map" class="map"></div>
+          <div id="flat" class="flat" hidden></div>
+          <div id="mapnote" class="mapnote" hidden></div>
+        </div>
+        <p class="attrib" id="attrib"></p>
+      </section>
+
+      <div class="two">
+        <section class="card" id="dotcard"></section>
+        <section class="card" id="leader"></section>
+      </div>
+
+      <section class="actions">
+        <button class="btn" id="copyBtn">Copy summary</button>
+        <button class="btn" id="csvBtn">Save results (CSV)</button>
+        <span class="toast" id="toast" hidden></span>
+      </section>
+
+      <footer class="foot">
+        Internal demo helper. It asks Google what a searcher standing at each dot would see, so it is a close preview, not the Moz Local product itself.
+        In Moz Local, Local Grid tracking is included on every plan and competitor benchmarking is included from the Preferred plan, on a weekly, biweekly or monthly schedule with history over time.
+      </footer>
+    </main>
+  </div>
+</div>
+
+<div class="modal" id="settings" hidden role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+  <div class="box">
+    <div class="boxhead">
+      <h2 id="settingsTitle">Settings</h2>
+      <button class="iconbtn" id="settingsClose" aria-label="Close settings">&#10005;</button>
+    </div>
+    <h3>Google key</h3>
+    <label for="apiKey">Google Maps Platform key</label>
+    <input type="password" id="apiKey" autocomplete="off" placeholder="Paste key">
+    <label class="check" for="remember" style="margin-top:8px"><input type="checkbox" id="remember"> Remember on this browser</label>
+    <p class="hint" id="keyState"></p>
+    <div class="msg warn" id="hostedNote" hidden>This copy is hosted on claude.ai, which blocks outside connections, so the map and live searches cannot run here. Use the shared link or the downloaded file for the real tool. The sample works everywhere.</div>
+
+    <h3>Free allowance guard</h3>
+    <label class="check" for="guard"><input type="checkbox" id="guard" checked> Stop before a search would go past Google's free monthly allowance</label>
+    <table class="usage" id="usage"></table>
+    <p class="hint">Counted on this browser only. If several people share one key, also cap the daily quotas in Google Cloud so the key can never be charged.</p>
+    <button class="btn small" id="resetUsage">Reset this month's count</button>
+
+    <h3>How to get a key for free</h3>
+    <ol>
+      <li>Ask JB (he has Google Cloud access) for a Google Maps Platform API key, or create one at console.cloud.google.com.</li>
+      <li>Enable two APIs on it: Maps JavaScript API and Places API (New).</li>
+      <li>Under key restrictions, allow only those two APIs, and add the tool's web address as an allowed website.</li>
+      <li>In Quotas, cap Places Text Search at 300 a day and Place Details at 30 a day. That keeps every month inside the free allowance.</li>
+      <li>Paste the key here, or into the DEFAULT_KEY line at the top of the file so the shared link works for everyone.</li>
+    </ol>
+  </div>
+</div>
+<div class="tip" id="tip" role="tooltip" hidden></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* Paste the shared Google key between the quotes to make the hosted link work for everyone. */
+  var DEFAULT_KEY = '';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var HOSTED = !!(window.claude && typeof window.claude.use === 'function');
+  var API = 'https://places.googleapis.com/v1/';
+  var MASK_FIND = 'places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.primaryTypeDisplayName,places.googleMapsUri';
+  var MASK_IDS = 'places.id';
+  var MASK_FULL = 'id,displayName,formattedAddress,location,rating,userRatingCount,primaryTypeDisplayName,googleMapsUri';
+  var MASK_BASIC = 'id,displayName,formattedAddress,location,primaryTypeDisplayName,googleMapsUri';
+  var FULL_CAP = 15, BASIC_CAP = 25, CONCURRENCY = 5;
+  var FREE = { mapLoads: 10000, ids: 10000, pro: 5000, ent: 1000 };
+  var M_PER_MI = 1609.344;
+  var LS = { key: 'lgp2.key', scans: 'lgp2.scans', settings: 'lgp2.settings', usage: 'lgp2.usage' };
+  var SPACING = {
+    mi: [[0.25, '0.25 mi'], [0.5, '0.5 mi'], [1, '1 mi'], [2, '2 mi'], [3, '3 mi'], [5, '5 mi']],
+    km: [[0.5, '0.5 km'], [1, '1 km'], [2, '2 km'], [3, '3 km'], [5, '5 km'], [8, '8 km']]
+  };
+
+  var state = { scan: null, sel: null, gridFor: null, showComp: false, candidates: [], chosen: null, running: false };
+  var maps = { ready: false, loading: false, failed: false, map: null, overlay: null, fitFor: null };
+  var downloads = null;
+
+  /* storage */
+  function lsGet(k) { try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } }
+  function lsDel(k) { try { localStorage.removeItem(k); } catch (e) { /* storage unavailable */ } }
+
+  /* helpers */
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (ch) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+    });
+  }
+  function pct(a, b) { return b ? Math.round(100 * a / b) + '%' : '0%'; }
+  function fmt1(n) { return n === null || n === undefined ? '' : (Math.round(n * 10) / 10).toFixed(1); }
+  function initials(name) {
+    var words = String(name || '').replace(/[^A-Za-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean);
+    var skip = { the: 1, and: 1, of: 1, a: 1 }, out = '';
+    for (var i = 0; i < words.length && out.length < 2; i++) {
+      if (skip[words[i].toLowerCase()] && words.length > 2) continue;
+      out += words[i].charAt(0).toUpperCase();
+    }
+    return out || '?';
+  }
+  function offsetPoint(lat, lng, dxM, dyM) {
+    return { lat: lat + dyM / 111320, lng: lng + dxM / (111320 * Math.cos(lat * Math.PI / 180)) };
+  }
+  function distM(a, b) {
+    var R = 6371000, toR = Math.PI / 180;
+    var dLat = (b.lat - a.lat) * toR, dLng = (b.lng - a.lng) * toR;
+    var s = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(a.lat * toR) * Math.cos(b.lat * toR) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+  }
+  function gridPoints(lat, lng, n, spacingM) {
+    var c = (n - 1) / 2, pts = [];
+    for (var r = 0; r < n; r++) for (var col = 0; col < n; col++) {
+      var p = offsetPoint(lat, lng, (col - c) * spacingM, (c - r) * spacingM);
+      pts.push({ r: r, c: col, lat: p.lat, lng: p.lng, ids: [] });
+    }
+    return pts;
+  }
+  function spacingLabel(scan) {
+    var v = scan.unit === 'km' ? scan.spacingM / 1000 : scan.spacingM / M_PER_MI;
+    return (Math.round(v * 100) / 100) + ' ' + scan.unit;
+  }
+  function distLabel(m, unit) {
+    var v = unit === 'km' ? m / 1000 : m / M_PER_MI;
+    return (v < 10 ? (Math.round(v * 10) / 10).toFixed(1) : Math.round(v)) + ' ' + unit;
+  }
+  function dotName(pt, n) {
+    var c = (n - 1) / 2;
+    if (pt.r === c && pt.c === c) return 'At the business';
+    var ns = pt.r < c ? 'north' : pt.r > c ? 'south' : '', ew = pt.c > c ? 'east' : pt.c < c ? 'west' : '';
+    var dir = ns && ew ? ns + '-' + ew : (ns || ew);
+    var steps = Math.max(Math.abs(pt.r - c), Math.abs(pt.c - c));
+    return steps + (steps === 1 ? ' dot ' : ' dots ') + dir;
+  }
+  function monthKey() { var d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1); }
+
+  /* usage meter */
+  function usage() {
+    var u = lsGet(LS.usage);
+    if (!u || u.month !== monthKey()) u = { month: monthKey(), mapLoads: 0, ids: 0, pro: 0, ent: 0 };
+    return u;
+  }
+  function addUsage(kind, n) { var u = usage(); u[kind] = (u[kind] || 0) + n; lsSet(LS.usage, u); renderUsage(); }
+  function renderUsage() {
+    var u = usage(), rows = [['Map loads', 'mapLoads'], ['Grid searches', 'ids'], ['Business lookups (basic)', 'pro'], ['Business lookups (with ratings)', 'ent']];
+    $('usage').innerHTML = '<tr><th>This month</th><th class="num">Used</th><th class="num">Free</th><th></th></tr>' + rows.map(function (r) {
+      var used = u[r[1]] || 0, lim = FREE[r[1]], p = Math.min(100, Math.round(100 * used / lim));
+      return '<tr><td>' + r[0] + '</td><td class="num">' + used + '</td><td class="num">' + lim + '</td><td><div class="meter"><i class="' + (p >= 80 ? 'hot' : '') + '" style="width:' + p + '%"></i></div></td></tr>';
+    }).join('');
+  }
+  function budgetProblem(nSpots) {
+    if (!$('guard').checked) return null;
+    var u = usage();
+    if (u.ids + nSpots > FREE.ids) return 'grid searches';
+    if (u.ent + 1 + FULL_CAP > FREE.ent) return 'business lookups with ratings';
+    if (u.pro + BASIC_CAP > FREE.pro) return 'business lookups';
+    return null;
+  }
+
+  /* sample data */
+  function rng(seed) {
+    var t = seed >>> 0;
+    return function () { t += 0x6D2B79F5; var x = Math.imul(t ^ (t >>> 15), 1 | t); x ^= x + Math.imul(x ^ (x >>> 7), 61 | x); return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
+  }
+  var SAMPLE_PREFIX = ['Bright Smile', 'Riverside', 'Downtown', 'Summit', 'Lakeview', 'Northgate', 'Elm Street', 'Harbor Point', 'Cedar', 'Willow Creek', 'Pinecrest', 'Meadow', 'Union Square', 'Hilltop', 'Parkside', 'Blue Ridge', 'Stonebridge', 'Grand Avenue', 'Westfield', 'Sunrise', 'Copper Hill', 'Kingsway', 'Silver Lake', 'Fairview', 'Maple Row', 'Ironwood', 'Brookside', 'Old Town', 'Eastgate', 'Prairie View', 'Clearwater', 'Redwood', 'Linden Park', 'Harvest'];
+  var SAMPLE_SUFFIX = ['Dental', 'Dentistry', 'Dental Care', 'Smiles', 'Dental Group', 'Family Dentistry', 'Dental Studio', 'Orthodontics'];
+  var SAMPLE_TYPES = ['Dentist', 'Dentist', 'Dental clinic', 'Cosmetic dentist', 'Orthodontist', 'Pediatric dentist'];
+  var SAMPLE_STREETS = ['Main St', 'Oak Ave', 'Washington Blvd', 'Lincoln Rd', 'Park Pl', 'Market St', 'Church St', 'Lake Dr'];
+  function buildSample() {
+    var rand = rng(20260922), n = 7, spacing = M_PER_MI, lat0 = 39.7817, lng0 = -89.6501;
+    var target = { id: 'sample-you', name: 'Oakwood Family Dental', address: '1200 Maple Ave, Springfield, IL 62704', lat: lat0, lng: lng0, rating: 4.7, reviews: 212, type: 'Dentist', mapsUrl: '' };
+    var places = {}; places[target.id] = target;
+    var actors = [{ id: target.id, lat: lat0, lng: lng0, p: 0.74 }];
+    for (var i = 0; i < SAMPLE_PREFIX.length; i++) {
+      var pos = offsetPoint(lat0, lng0, (rand() * 2 - 1) * spacing * 4.3, (rand() * 2 - 1) * spacing * 4.3);
+      var id = 'sample-' + (i + 1);
+      places[id] = { id: id, name: SAMPLE_PREFIX[i] + ' ' + SAMPLE_SUFFIX[i % SAMPLE_SUFFIX.length],
+        address: (100 + Math.floor(rand() * 3900)) + ' ' + SAMPLE_STREETS[i % SAMPLE_STREETS.length] + ', Springfield, IL',
+        lat: pos.lat, lng: pos.lng, rating: Math.round((3.5 + rand() * 1.5) * 10) / 10, reviews: Math.round(6 + Math.pow(rand(), 2) * 540),
+        type: SAMPLE_TYPES[Math.floor(rand() * SAMPLE_TYPES.length)], mapsUrl: '' };
+      actors.push({ id: id, lat: pos.lat, lng: pos.lng, p: 0.3 + rand() * 0.65 });
+    }
+    var pts = gridPoints(lat0, lng0, n, spacing);
+    pts.forEach(function (pt) {
+      var scored = actors.map(function (a) { var d = distM(pt, a) / spacing; return { id: a.id, s: a.p / (1 + d * d * 0.9) + rand() * 0.05 }; });
+      scored.sort(function (x, y) { return y.s - x.s; });
+      pt.ids = scored.slice(0, 20).map(function (x) { return x.id; });
+    });
+    return { id: 'sample', createdAt: new Date().toISOString(), mode: 'sample', business: target, keyword: 'dentist', size: n, spacingM: spacing, unit: 'mi', regionCode: 'US', points: pts, places: places, unknown: 0 };
+  }
+
+  /* derived */
+  function rankAt(pt, id) { var i = pt.ids.indexOf(id); return i < 0 ? null : i + 1; }
+  function bin(rank, pt) {
+    if (pt && !pt.ids.length) return 0;
+    if (rank === null) return 7;
+    return rank === 1 ? 1 : rank <= 3 ? 2 : rank <= 6 ? 3 : rank <= 10 ? 4 : rank <= 15 ? 5 : 6;
+  }
+  function rankLabel(rank, pt) { if (pt && !pt.ids.length) return 'N/A'; return rank === null ? '21+' : String(rank); }
+  function aggregates(scan, id) {
+    var found = 0, sum = 0, top3 = 0, top10 = 0, best = null, na = 0;
+    scan.points.forEach(function (pt) {
+      if (!pt.ids.length) { na += 1; return; }
+      var r = rankAt(pt, id);
+      if (r !== null) { found += 1; sum += r; if (r <= 3) top3 += 1; if (r <= 10) top10 += 1; if (best === null || r < best) best = r; }
+    });
+    return { n: scan.points.length, found: found, missing: scan.points.length - found, avg: found ? sum / found : null, top3: top3, top10: top10, best: best, na: na };
+  }
+  function compassRead(scan, id) {
+    var n = scan.size, c = (n - 1) / 2, acc = { N: [0, 0], S: [0, 0], E: [0, 0], W: [0, 0] };
+    scan.points.forEach(function (pt) {
+      var r = rankAt(pt, id), v = r === null ? 21 : r;
+      if (pt.r < c) { acc.N[0] += v; acc.N[1] += 1; } if (pt.r > c) { acc.S[0] += v; acc.S[1] += 1; }
+      if (pt.c > c) { acc.E[0] += v; acc.E[1] += 1; } if (pt.c < c) { acc.W[0] += v; acc.W[1] += 1; }
+    });
+    var names = { N: 'north', S: 'south', E: 'east', W: 'west' };
+    var list = Object.keys(acc).filter(function (k) { return acc[k][1] > 0; }).map(function (k) { return { k: k, avg: acc[k][0] / acc[k][1] }; });
+    list.sort(function (a, b) { return a.avg - b.avg; });
+    if (list.length < 2) return null;
+    return { strongest: names[list[0].k], weakest: names[list[list.length - 1].k], spread: list[list.length - 1].avg - list[0].avg };
+  }
+  function competitorRows(scan) {
+    var rows = [];
+    Object.keys(scan.places).forEach(function (id) {
+      var a = aggregates(scan, id);
+      if (a.found === 0 && id !== scan.business.id) return;
+      rows.push({ id: id, place: scan.places[id], agg: a, dist: distM(scan.business, scan.places[id]) });
+    });
+    rows.sort(function (x, y) {
+      if (y.agg.top3 !== x.agg.top3) return y.agg.top3 - x.agg.top3;
+      if (y.agg.top10 !== x.agg.top10) return y.agg.top10 - x.agg.top10;
+      return (x.agg.avg === null ? 99 : x.agg.avg) - (y.agg.avg === null ? 99 : y.agg.avg);
+    });
+    return rows;
+  }
+  function placeName(scan, id) { var p = scan.places[id]; return p ? p.name : 'Another business'; }
+  function currentPoint() {
+    var s = state.scan, p = state.sel;
+    return s.points.filter(function (x) { return x.r === p.r && x.c === p.c; })[0] || null;
+  }
+
+  /* rendering */
+  function renderAll(fit) {
+    var s = state.scan; if (!s) return;
+    if (!state.sel) { var c = (s.size - 1) / 2; state.sel = { r: c, c: c }; }
+    if (!state.gridFor || !s.places[state.gridFor]) state.gridFor = s.business.id;
+    renderTitle(); renderStats(); renderLegend(); renderGridFor(); renderKwSelect();
+    renderMap(fit); renderDotCard(); renderLeader();
+    $('attrib').textContent = s.mode === 'live'
+      ? 'Live search data from Google. Searched ' + new Date(s.createdAt).toLocaleString() + '.'
+      : 'Sample data, generated for illustration. No real business is shown.';
+  }
+  function renderTitle() {
+    var s = state.scan, b = s.business;
+    var html = '<div><h1>' + esc(b.name) + '</h1><div class="sub">' + esc(b.address || '') + '</div>' +
+      '<div class="kwline">Keyword <b>' + esc(s.keyword) + '</b> &middot; ' + s.size + ' x ' + s.size + ' grid &middot; ' + esc(spacingLabel(s)) + ' between dots</div></div>' +
+      '<div class="bizmeta"><span class="badge ' + (s.mode === 'live' ? 'live' : 'sample') + '">' + (s.mode === 'live' ? 'Live search' : 'Sample data') + '</span><br>' +
+      '<span class="stars">' + (b.rating ? fmt1(b.rating) + ' stars' : 'No rating yet') + '</span>' + (b.reviews ? ' &middot; ' + b.reviews + ' Google reviews' : '') +
+      (b.type ? '<br>' + esc(b.type) : '') + (b.mapsUrl ? '<br><a href="' + esc(b.mapsUrl) + '" target="_blank" rel="noopener">Open in Google Maps</a>' : '') + '</div>';
+    if (s.mode !== 'live') html += '<div class="sampnote">Sample business, illustrative only. Fill in a real business on the left and press Search Now.</div>';
+    $('titlebar').innerHTML = html;
+  }
+  function renderStats() {
+    var s = state.scan, a = aggregates(s, s.business.id), read = compassRead(s, s.business.id);
+    var tiles = [
+      { l: 'Average rank', v: a.avg === null ? 'Not seen' : '#' + fmt1(a.avg), s: a.found ? 'where the business appears' : 'not in the top 20 at any dot' },
+      { l: 'In the top 3', v: pct(a.top3, a.n), s: a.top3 + ' of ' + a.n + ' dots show it in the map pack' },
+      { l: 'In the top 10', v: pct(a.top10, a.n), s: a.top10 + ' of ' + a.n + ' dots' },
+      { l: 'Not visible', v: String(a.missing), s: (a.missing === 1 ? 'dot' : 'dots') + ' at 21+ or no results' }
+    ];
+    $('stats').innerHTML = tiles.map(function (t) { return '<div class="stat"><div class="l">' + esc(t.l) + '</div><div class="v">' + esc(t.v) + '</div><div class="s">' + esc(t.s) + '</div></div>'; }).join('');
+    var txt;
+    if (!a.found) txt = s.business.name + ' does not appear in the top 20 anywhere on this grid for "' + s.keyword + '".';
+    else if (read && read.spread >= 1.5) txt = 'Strongest to the ' + read.strongest + ', weakest to the ' + read.weakest + '. Best position on the grid is #' + a.best + '.';
+    else txt = 'Visibility is fairly even across the grid. Best position on the grid is #' + a.best + '.';
+    $('read').textContent = txt;
+  }
+  function renderLegend() {
+    var items = [['r1', '1', '1'], ['r2', '2', '2 to 3'], ['r3', '4', '4 to 6'], ['r4', '7', '7 to 10'], ['r5', '11', '11 to 15'], ['r6', '16', '16 to 20'], ['r7', '21', '21+'], ['', 'N', 'No results']];
+    $('legend').innerHTML = items.map(function (it) { return '<span><i class="rkchip ' + it[0] + '">' + it[1] + '</i>' + it[2] + '</span>'; }).join('');
+  }
+  function renderGridFor() {
+    var s = state.scan, rows = competitorRows(s).slice(0, 12), sel = $('gridFor');
+    var opts = '<option value="' + esc(s.business.id) + '">Ranks for: ' + esc(s.business.name) + '</option>';
+    rows.forEach(function (r) { if (r.id !== s.business.id) opts += '<option value="' + esc(r.id) + '">Ranks for: ' + esc(r.place.name) + '</option>'; });
+    sel.innerHTML = opts; sel.value = state.gridFor;
+    $('showComp').checked = state.showComp;
+  }
+  function renderKwSelect() {
+    var s = state.scan, list = (lsGet(LS.scans) || []).filter(function (x) { return x.business.id === s.business.id; });
+    var sel = $('kwSelect'), html = '';
+    if (s.mode === 'sample') html += '<option value="sample">Keyword: ' + esc(s.keyword) + ' (sample)</option>';
+    list.forEach(function (x) { html += '<option value="' + esc(x.id) + '">Keyword: ' + esc(x.keyword) + ' &middot; ' + esc(new Date(x.createdAt).toLocaleDateString()) + '</option>'; });
+    html += '<option value="__new">New keyword for this business</option>';
+    sel.innerHTML = html; sel.value = s.mode === 'sample' ? 'sample' : s.id;
+  }
+  function makeDot(pt, idx) {
+    var s = state.scan, id = state.gridFor, r = rankAt(pt, id), b = bin(r, pt);
+    var el = document.createElement('button');
+    el.type = 'button'; el.className = 'dot r' + b + (state.sel && state.sel.r === pt.r && state.sel.c === pt.c ? ' sel' : '');
+    el.setAttribute('data-i', String(idx));
+    el.setAttribute('aria-label', dotName(pt, s.size) + ': ' + (r === null ? 'not in the top 20' : 'rank ' + r));
+    el.textContent = rankLabel(r, pt);
+    return el;
+  }
+  function homePin() {
+    var el = document.createElement('div'); el.className = 'home'; el.setAttribute('aria-hidden', 'true');
+    el.innerHTML = '<svg viewBox="0 0 26 34" width="26" height="34"><path d="M13 1C6.4 1 1 6.3 1 12.9 1 21.5 13 33 13 33s12-11.5 12-20.1C25 6.3 19.6 1 13 1z" fill="#0075a8" stroke="#ffffff" stroke-width="2"/><circle cx="13" cy="13" r="4.5" fill="#ffffff"/></svg>';
+    return el;
+  }
+  function compMarker(p) {
+    var el = document.createElement('button'); el.type = 'button'; el.className = 'cm'; el.textContent = initials(p.name);
+    el.title = p.name + (p.rating ? ', ' + fmt1(p.rating) + ' stars (' + p.reviews + ')' : ''); el.setAttribute('data-cmp', p.id);
+    return el;
+  }
+  function renderMap(fit) {
+    var s = state.scan;
+    var useMap = maps.ready && !maps.failed;
+    $('flat').hidden = useMap; $('map').style.visibility = useMap ? 'visible' : 'hidden';
+    if (useMap) {
+      var items = s.points.map(function (pt, i) { return { lat: pt.lat, lng: pt.lng, el: makeDot(pt, i) }; });
+      items.push({ lat: s.business.lat, lng: s.business.lng, el: homePin() });
+      if (state.showComp) competitorRows(s).slice(0, 12).forEach(function (r) { if (r.id !== s.business.id && r.place.lat) items.push({ lat: r.place.lat, lng: r.place.lng, el: compMarker(r.place) }); });
+      maps.overlay.setItems(items);
+      if (fit || maps.fitFor !== s.id) {
+        var b = new google.maps.LatLngBounds();
+        s.points.forEach(function (pt) { b.extend({ lat: pt.lat, lng: pt.lng }); });
+        maps.map.fitBounds(b, 48); maps.fitFor = s.id;
+      }
+      setMapNote('');
+    } else {
+      var flat = $('flat'), grid = document.createElement('div'); grid.className = 'flatgrid';
+      grid.style.gridTemplateColumns = 'repeat(' + s.size + ', 1fr)';
+      s.points.forEach(function (pt, i) {
+        var w = document.createElement('div'); w.className = 'cellwrap'; w.appendChild(makeDot(pt, i));
+        if (pt.r === (s.size - 1) / 2 && pt.c === (s.size - 1) / 2) w.appendChild(homePin());
+        grid.appendChild(w);
+      });
+      flat.innerHTML = ''; flat.appendChild(grid);
+      if (HOSTED) setMapNote('The street map cannot load on this hosted copy. Open the shared link or the downloaded file to see the dots on the real map.');
+      else if (maps.failed) setMapNote($('mapnote').textContent || 'The Google map did not load.', true);
+      else if (!currentKey()) setMapNote('Add a Google key in Settings (gear icon, top right) to put these dots on the real street map.');
+      else if (maps.loading) setMapNote('Loading the map from Google.');
+    }
+  }
+  function setMapNote(text, isErr) { var n = $('mapnote'); n.hidden = !text; n.textContent = text || ''; n.className = 'mapnote' + (isErr ? ' err' : ''); }
+  function renderDotCard() {
+    var s = state.scan, pt = currentPoint(); if (!pt) { $('dotcard').innerHTML = ''; return; }
+    var you = rankAt(pt, s.business.id), n = s.size;
+    var html = '<div class="cardhead"><h2>Rankings at this dot</h2><span class="where">' + esc(dotName(pt, n)) + '</span></div>';
+    if (!pt.ids.length) { html += '<p class="none">Google returned no results at this dot.</p>'; $('dotcard').innerHTML = html; return; }
+    html += '<p class="none" style="margin:0 0 8px">' + esc(s.business.name) + (you === null ? ' is not in the top 20 here.' : ' ranks #' + you + ' here.') + '</p>';
+    html += '<div class="tbl-wrap"><table><thead><tr><th>Rank</th><th>Business</th><th class="num">Reviews</th><th class="num">Rating</th></tr></thead><tbody>';
+    function rowHtml(id, rank) {
+      var p = s.places[id], isYou = id === s.business.id;
+      return '<tr class="' + (isYou ? 'you' : '') + '"><td><span class="rkchip r' + bin(rank, null) + '">' + rank + '</span></td>' +
+        '<td>' + esc(p ? p.name : 'Another business') + (isYou ? '<span class="youtag">You</span>' : '') + '<span class="sub">' + esc(p && p.type ? p.type : '') + '</span></td>' +
+        '<td class="num">' + (p && p.reviews ? p.reviews : '') + '</td><td class="num">' + (p && p.rating ? fmt1(p.rating) : '') + '</td></tr>';
+    }
+    pt.ids.slice(0, 10).forEach(function (id, i) { html += rowHtml(id, i + 1); });
+    if (you !== null && you > 10) html += rowHtml(s.business.id, you);
+    html += '</tbody></table></div><p class="hint">Click any dot on the map to see who a searcher there gets.</p>';
+    $('dotcard').innerHTML = html;
+  }
+  function renderLeader() {
+    var s = state.scan, rows = competitorRows(s).slice(0, 12), n = s.points.length;
+    var maxTop3 = rows.reduce(function (m, r) { return Math.max(m, r.agg.top3); }, 0) || 1;
+    var html = '<div class="cardhead"><h2>Leaderboard across the grid</h2><span class="where">' + rows.length + ' businesses appear in the top 10 somewhere</span></div>' +
+      '<div class="tbl-wrap"><table><thead><tr><th>Business</th><th class="num">Top 3</th><th class="num">Avg rank</th><th class="num">Best</th><th class="num">Reviews</th><th class="num">Rating</th><th class="num">Distance</th><th></th></tr></thead><tbody>';
+    rows.forEach(function (row) {
+      var isYou = row.id === s.business.id;
+      html += '<tr class="' + (isYou ? 'you' : '') + '"><td>' + esc(row.place.name) + (isYou ? '<span class="youtag">You</span>' : '') +
+        '<span class="sub">' + esc(row.place.type || '') + '</span></td>' +
+        '<td class="num"><span class="bar2" style="width:' + Math.round(48 * row.agg.top3 / maxTop3) + 'px"></span>' + pct(row.agg.top3, n) + '</td>' +
+        '<td class="num">' + (row.agg.avg === null ? '' : fmt1(row.agg.avg)) + '</td><td class="num">' + (row.agg.best === null ? '' : '#' + row.agg.best) + '</td>' +
+        '<td class="num">' + (row.place.reviews || '') + '</td><td class="num">' + (row.place.rating ? fmt1(row.place.rating) : '') + '</td>' +
+        '<td class="num">' + (isYou ? '' : esc(distLabel(row.dist, s.unit))) + '</td>' +
+        '<td>' + (isYou ? '' : '<button type="button" class="rowbtn' + (state.gridFor === row.id ? ' on' : '') + '" data-grid="' + esc(row.id) + '">' + (state.gridFor === row.id ? 'Showing' : 'Show grid') + '</button>') + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+    if (s.unknown) html += '<p class="hint">' + s.unknown + ' more businesses appeared only occasionally and were not looked up.</p>';
+    $('leader').innerHTML = html;
+  }
+
+  /* tooltip */
+  var tip = $('tip');
+  function showTip(el) {
+    var s = state.scan; if (!s) return;
+    var pt = s.points[Number(el.getAttribute('data-i'))]; if (!pt) return;
+    var you = rankAt(pt, s.business.id);
+    var html = '<b>' + esc(dotName(pt, s.size)) + '</b><span class="you">' + esc(s.business.name) + ': ' + (pt.ids.length ? (you === null ? 'not in top 20' : '#' + you) : 'no results') + '</span>';
+    var others = pt.ids.filter(function (id) { return id !== s.business.id; }).slice(0, 4);
+    if (others.length) html += '<ol>' + others.map(function (id) { return '<li>' + esc(placeName(s, id)) + ' (#' + (pt.ids.indexOf(id) + 1) + ')</li>'; }).join('') + '</ol>';
+    tip.innerHTML = html; tip.hidden = false;
+    var r = el.getBoundingClientRect(), tw = tip.offsetWidth, th = tip.offsetHeight;
+    var left = Math.min(Math.max(8, r.left + r.width / 2 - tw / 2), window.innerWidth - tw - 8);
+    var top = r.top - th - 8; if (top < 8) top = r.bottom + 8;
+    tip.style.left = left + 'px'; tip.style.top = top + 'px';
+  }
+  function hideTip() { tip.hidden = true; }
+
+  /* Google map */
+  function GridOverlay() {}
+  function defineOverlay() {
+    GridOverlay.prototype = Object.create(google.maps.OverlayView.prototype);
+    GridOverlay.prototype.onAdd = function () {
+      this.layer = document.createElement('div'); this.layer.className = 'gm-layer';
+      this.getPanes().overlayMouseTarget.appendChild(this.layer);
+      if (this.pending) { var p = this.pending; this.pending = null; this.setItems(p); }
+    };
+    GridOverlay.prototype.setItems = function (items) {
+      if (!this.layer) { this.pending = items; return; }
+      this.layer.innerHTML = ''; this.items = items;
+      var self = this; items.forEach(function (it) { self.layer.appendChild(it.el); });
+      this.draw();
+    };
+    GridOverlay.prototype.draw = function () {
+      var proj = this.getProjection(); if (!proj || !this.items) return;
+      this.items.forEach(function (it) {
+        var p = proj.fromLatLngToDivPixel(new google.maps.LatLng(it.lat, it.lng)); if (!p) return;
+        it.el.style.left = p.x + 'px'; it.el.style.top = p.y + 'px';
+      });
+    };
+    GridOverlay.prototype.onRemove = function () { if (this.layer && this.layer.parentNode) this.layer.parentNode.removeChild(this.layer); this.layer = null; };
+  }
+  function loadMaps(key) {
+    if (HOSTED || maps.ready || maps.loading || !key) return;
+    maps.loading = true; maps.failed = false;
+    window.__lgpMapReady = function () {
+      maps.loading = false; maps.ready = true; addUsage('mapLoads', 1);
+      defineOverlay();
+      maps.map = new google.maps.Map($('map'), {
+        center: { lat: 39.78, lng: -89.65 }, zoom: 12, mapTypeControl: false, streetViewControl: false, fullscreenControl: true,
+        clickableIcons: false, gestureHandling: 'greedy',
+        styles: [{ featureType: 'poi', stylers: [{ visibility: 'off' }] }, { featureType: 'transit', stylers: [{ visibility: 'off' }] }]
+      });
+      maps.overlay = new GridOverlay(); maps.overlay.setMap(maps.map);
+      setupAutocomplete();
+      var layer = $('map');
+      layer.addEventListener('click', onDotClick);
+      layer.addEventListener('mouseover', function (e) { var d = e.target.closest('.dot'); if (d) showTip(d); });
+      layer.addEventListener('mouseout', function (e) { if (e.target.closest('.dot')) hideTip(); });
+      if (state.scan) renderMap(true);
+    };
+    window.gm_authFailure = function () {
+      maps.failed = true; maps.loading = false;
+      setMapNote('Google rejected this key for the map. In Google Cloud, check that Maps JavaScript API is enabled and that the key allows this web address.', true);
+      if (state.scan) renderMap(false);
+    };
+    var sc = document.createElement('script');
+    sc.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(key) + '&v=weekly&loading=async&callback=__lgpMapReady';
+    sc.async = true;
+    sc.onerror = function () { maps.loading = false; maps.failed = true; setMapNote('The Google map could not load. Check the connection and the key.', true); if (state.scan) renderMap(false); };
+    document.head.appendChild(sc);
+    if (state.scan) renderMap(false);
+  }
+
+  /* Google address dropdown, fills the fields and picks the business */
+  var pacEl = null;
+  function setupAutocomplete() {
+    if (pacEl || !maps.ready || !google.maps.importLibrary) return;
+    google.maps.importLibrary('places').then(function (lib) {
+      var Ctor = lib.PlaceAutocompleteElement || (google.maps.places && google.maps.places.PlaceAutocompleteElement);
+      if (!Ctor) return;
+      pacEl = new Ctor({ includedRegionCodes: [$('bizCountry').value.toLowerCase()] });
+      pacEl.id = 'pac';
+      var host = $('pacHost'); host.innerHTML = ''; host.appendChild(pacEl);
+      $('pacWrap').hidden = false;
+      pacEl.addEventListener('gmp-select', function (ev) { var pred = ev.placePrediction; if (pred && pred.toPlace) onPlacePicked(pred.toPlace()); });
+      pacEl.addEventListener('gmp-placeselect', function (ev) { if (ev.place) onPlacePicked(ev.place); });
+    }).catch(function () { /* dropdown unavailable, the fields still work by hand */ });
+  }
+  function onPlacePicked(place) {
+    place.fetchFields({ fields: ['id', 'displayName', 'formattedAddress', 'addressComponents', 'location', 'types'] }).then(function () {
+      addUsage('pro', 1);
+      var comps = place.addressComponents || [];
+      function comp(type, short) {
+        for (var i = 0; i < comps.length; i++) {
+          if ((comps[i].types || []).indexOf(type) >= 0) return short ? (comps[i].shortText || comps[i].longText || '') : (comps[i].longText || comps[i].shortText || '');
+        }
+        return '';
+      }
+      var street = [comp('street_number'), comp('route')].filter(Boolean).join(' ');
+      var city = comp('locality') || comp('postal_town') || comp('sublocality_level_1') || comp('administrative_area_level_2');
+      var region = comp('administrative_area_level_1', true), zip = comp('postal_code'), country = comp('country', true);
+      var types = place.types || [];
+      var isBusiness = types.indexOf('establishment') >= 0 || types.indexOf('point_of_interest') >= 0;
+      var name = place.displayName || '';
+      if (isBusiness && name) $('bizName').value = name;
+      $('bizStreet').value = street; $('bizCity').value = city; $('bizState').value = region; $('bizZip').value = zip;
+      if (country) { var sel = $('bizCountry'); for (var i = 0; i < sel.options.length; i++) { if (sel.options[i].value === country) sel.value = country; } }
+      setMsg('msg', '');
+      if (!isBusiness) { setMsg('msg1', 'Address filled in. Add the business name and press Find on Google.', 'ok'); return; }
+      var loc = place.location;
+      var lat = loc ? (typeof loc.lat === 'function' ? loc.lat() : loc.lat) : null;
+      var lng = loc ? (typeof loc.lng === 'function' ? loc.lng() : loc.lng) : null;
+      state.chosen = { id: place.id, name: name, address: place.formattedAddress || '', lat: lat, lng: lng, rating: null, reviews: 0, type: '', mapsUrl: '' };
+      state.candidates = [state.chosen]; renderFound();
+      $('step1').classList.add('done');
+      setMsg('msg1', 'Picked from Google. Go to step 2.', 'ok');
+      var key = currentKey();
+      if (!key) return;
+      withRetry(function () { return gcall('places/' + encodeURIComponent(place.id), 'GET', null, MASK_FULL, key); }, 1).then(function (p) {
+        addUsage('ent', 1);
+        var full = toPlace(p);
+        if (state.chosen && state.chosen.id === full.id) {
+          state.chosen = full; state.candidates = [full]; renderFound();
+          if (!$('kw').value.trim() && full.type) $('kw').value = full.type.toLowerCase();
+        }
+      }).catch(function () { /* rating stays blank until the search runs */ });
+    }).catch(function () { setMsg('msg1', 'Could not read that place. Fill the fields in by hand.', 'err'); });
+  }
+
+  /* controls */
+  function fillSpacing(keep) {
+    var unit = $('unit').value, sel = $('spacing'), prev = keep !== undefined ? keep : sel.value;
+    sel.innerHTML = SPACING[unit].map(function (o) { return '<option value="' + o[0] + '">' + o[1] + '</option>'; }).join('');
+    sel.value = SPACING[unit].some(function (o) { return String(o[0]) === String(prev); }) ? prev : '1';
+  }
+  function spacingMeters() { var v = parseFloat($('spacing').value) || 1; return $('unit').value === 'km' ? v * 1000 : v * M_PER_MI; }
+  function settings() { return { size: $('size').value, spacing: $('spacing').value, unit: $('unit').value, country: $('bizCountry').value, guard: $('guard').checked }; }
+  function applySettings(st) {
+    if (!st) return;
+    if (st.size) $('size').value = st.size; if (st.unit) $('unit').value = st.unit; if (st.country) $('bizCountry').value = st.country;
+    if (typeof st.guard === 'boolean') $('guard').checked = st.guard;
+    fillSpacing(st.spacing);
+  }
+  function updateCost() {
+    var n = parseInt($('size').value, 10);
+    $('costNote').textContent = 'One search checks ' + (n * n) + ' dots and looks up the businesses that show up. Inside Google\'s free monthly allowance this costs nothing; the guard in Settings stops it before it would.';
+  }
+  function setMsg(id, text, kind) { var m = $(id); if (!text) { m.hidden = true; m.textContent = ''; return; } m.className = 'msg' + (kind ? ' ' + kind : ''); m.textContent = text; m.hidden = false; }
+  function toast(text) { var t = $('toast'); t.textContent = text; t.hidden = false; clearTimeout(toast.timer); toast.timer = setTimeout(function () { t.hidden = true; }, 2600); }
+  function setBusy(busy) {
+    state.running = busy;
+    ['findBtn', 'runBtn', 'sampleBtn'].forEach(function (id) { $(id).disabled = busy; });
+    $('prog').hidden = !busy; if (!busy) { $('progBar').style.width = '0%'; $('progText').textContent = ''; }
+  }
+  function progress(done, total, text) { $('progBar').style.width = Math.round(100 * done / Math.max(1, total)) + '%'; $('progText').textContent = text; }
+  function currentKey() { var k = ($('apiKey').value || '').trim(); return k || DEFAULT_KEY; }
+  function keyState() {
+    var k = currentKey();
+    $('keyState').textContent = !k ? 'No key yet. The sample still works; live searches and the street map need a key.' : (($('apiKey').value || '').trim() ? 'Key saved on this browser.' : 'Using the key built into this file.');
+  }
+
+  /* Google Places */
+  function friendlyError(err) {
+    var m = (err && err.message) || 'Unknown error';
+    if (err && err.network) {
+      if (HOSTED) return 'This hosted copy cannot reach Google. Open the shared link or the downloaded file to run live searches.';
+      return 'Could not reach Google. Check the internet connection, and if the key has a website restriction, make sure this page\'s address is on the list.';
+    }
+    if (err && (err.status === 403 || err.status === 401)) return 'Google rejected the key: ' + m + ' Check that Places API (New) is enabled, billing is on, and the key allows this API and this web address.';
+    if (err && err.status === 429) return 'Google is rate limiting or the daily quota cap was reached. Try again later.';
+    return 'Google returned an error: ' + m;
+  }
+  function gcall(path, method, body, mask, key) {
+    var opts = { method: method, headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': mask } };
+    if (body) opts.body = JSON.stringify(body);
+    return fetch(API + path, opts).then(function (res) {
+      return res.text().then(function (t) {
+        var j = {}; try { j = t ? JSON.parse(t) : {}; } catch (e) { j = {}; }
+        if (!res.ok) { var err = new Error((j.error && j.error.message) || ('HTTP ' + res.status)); err.status = res.status; throw err; }
+        return j;
+      });
+    }, function (e) { var err = new Error(e && e.message ? e.message : 'Network error'); err.network = true; throw err; });
+  }
+  function withRetry(fn, tries) {
+    return fn().catch(function (err) {
+      var retriable = err.status === 429 || (err.status >= 500 && err.status < 600);
+      if (!retriable || tries <= 0) throw err;
+      return new Promise(function (res) { setTimeout(res, tries === 2 ? 600 : 1800); }).then(function () { return withRetry(fn, tries - 1); });
+    });
+  }
+  function pool(items, limit, worker, onEach) {
+    var results = new Array(items.length), next = 0, done = 0, failed = null;
+    return new Promise(function (resolve, reject) {
+      function launch() {
+        if (failed) return;
+        if (done === items.length) { resolve(results); return; }
+        while (next < items.length && next - done < limit) {
+          (function (i) {
+            next += 1;
+            worker(items[i], i).then(function (r) { results[i] = r; done += 1; if (onEach) onEach(done, items.length); launch(); },
+              function (e) { if (!failed) { failed = e; reject(e); } });
+          })(next);
+        }
+      }
+      launch();
+    });
+  }
+  function toPlace(p) {
+    return { id: p.id, name: p.displayName && p.displayName.text ? p.displayName.text : 'Unnamed business', address: p.formattedAddress || '',
+      lat: p.location ? p.location.latitude : null, lng: p.location ? p.location.longitude : null, rating: p.rating || null, reviews: p.userRatingCount || 0,
+      type: p.primaryTypeDisplayName && p.primaryTypeDisplayName.text ? p.primaryTypeDisplayName.text : '', mapsUrl: p.googleMapsUri || '' };
+  }
+  function addressQuery() {
+    var parts = [$('bizName').value, $('bizStreet').value, $('bizCity').value, $('bizState').value, $('bizZip').value].map(function (v) { return v.trim(); }).filter(Boolean);
+    return parts.join(', ');
+  }
+  function findBusiness() {
+    var key = currentKey();
+    setMsg('msg1', ''); setMsg('msg', '');
+    if (!$('bizName').value.trim()) { setMsg('msg1', 'Type the business name first.', 'err'); $('bizName').focus(); return; }
+    if (!$('bizCity').value.trim() && !$('bizZip').value.trim()) { setMsg('msg1', 'Add at least the city or the postcode so Google finds the right one.', 'err'); $('bizCity').focus(); return; }
+    if (!key) { setMsg('msg1', 'Add a Google key in Settings (gear icon, top right) to look up a real business.', 'err'); openSettings(); return; }
+    if ($('guard').checked && usage().ent + 1 > FREE.ent) { setMsg('msg1', 'This month\'s free allowance for business lookups is used up. Turn off the guard in Settings to continue anyway.', 'warn'); return; }
+    setBusy(true); progress(0, 1, 'Looking up the business on Google');
+    var body = { textQuery: addressQuery(), pageSize: 5, languageCode: 'en', regionCode: $('bizCountry').value };
+    withRetry(function () { return gcall('places:searchText', 'POST', body, MASK_FIND, key); }, 2).then(function (res) {
+      addUsage('ent', 1);
+      var places = (res.places || []).map(toPlace);
+      if (!places.length) { state.candidates = []; state.chosen = null; renderFound(); setMsg('msg1', 'Google found nothing for that. Check the spelling and try adding the street or postcode.', 'err'); return; }
+      state.candidates = places; state.chosen = places[0]; renderFound();
+      if (!$('kw').value.trim() && places[0].type) $('kw').value = places[0].type.toLowerCase();
+      setMsg('msg1', 'Found it. Check the match, then go to step 2.', 'ok');
+      $('step1').classList.add('done'); $('kw').focus();
+    }).catch(function (err) { setMsg('msg1', friendlyError(err), 'err'); }).then(function () { setBusy(false); });
+  }
+  function renderFound() {
+    var box = $('found'), ch = state.chosen;
+    if (!ch) { box.hidden = true; return; }
+    box.hidden = false; $('foundName').textContent = ch.name; $('foundAddr').textContent = ch.address;
+    $('foundMeta').textContent = (ch.type ? ch.type + '. ' : '') + (ch.rating ? fmt1(ch.rating) + ' stars, ' + ch.reviews + ' Google reviews.' : 'No rating yet.');
+    var others = state.candidates.filter(function (c) { return c.id !== ch.id; });
+    $('candWrap').hidden = !others.length;
+    $('cands').innerHTML = others.map(function (c) { return '<li><button type="button" data-cand="' + esc(c.id) + '"><b>' + esc(c.name) + '</b><span>' + esc(c.address) + '</span></button></li>'; }).join('');
+  }
+  function runScan() {
+    var key = currentKey(), kw = $('kw').value.trim();
+    setMsg('msg', '');
+    if (!key) { setMsg('msg', 'Add a Google key in Settings (gear icon, top right) first.', 'err'); openSettings(); return; }
+    if (!state.chosen) { setMsg('msg', 'Do step 1 first so the grid is centred on the right business.', 'err'); $('bizName').focus(); return; }
+    if (!kw) { setMsg('msg', 'Type what a customer would search for, such as "emergency plumber".', 'err'); $('kw').focus(); return; }
+    var biz = state.chosen, n = parseInt($('size').value, 10), spacing = spacingMeters(), region = $('bizCountry').value, unit = $('unit').value;
+    var problem = budgetProblem(n * n);
+    if (problem) { setMsg('msg', 'This search would go past this month\'s free allowance for ' + problem + '. Try a smaller grid, wait for next month, or turn off the guard in Settings.', 'warn'); return; }
+    var pts = gridPoints(biz.lat, biz.lng, n, spacing), radius = Math.min(50000, Math.max(250, Math.round(spacing / 2)));
+    setBusy(true); progress(0, pts.length, 'Checking dot 0 of ' + pts.length);
+    lsSet(LS.settings, settings());
+    pool(pts, CONCURRENCY, function (pt) {
+      var body = { textQuery: kw, pageSize: 20, languageCode: 'en', regionCode: region, locationBias: { circle: { center: { latitude: pt.lat, longitude: pt.lng }, radius: radius } } };
+      return withRetry(function () { return gcall('places:searchText', 'POST', body, MASK_IDS, key); }, 2).then(function (res) { return (res.places || []).map(function (p) { return p.id; }); });
+    }, function (done, total) { progress(done, total, 'Checking dot ' + done + ' of ' + total); }).then(function (lists) {
+      addUsage('ids', pts.length);
+      pts.forEach(function (pt, i) { pt.ids = lists[i] || []; });
+      var top3 = {}, top10 = {};
+      pts.forEach(function (pt) {
+        pt.ids.slice(0, 3).forEach(function (id) { if (id !== biz.id) top3[id] = (top3[id] || 0) + 1; });
+        pt.ids.slice(3, 10).forEach(function (id) { if (id !== biz.id) top10[id] = (top10[id] || 0) + 1; });
+      });
+      var fullIds = Object.keys(top3).sort(function (a, b) { return top3[b] - top3[a]; }).slice(0, FULL_CAP);
+      var basicIds = Object.keys(top10).filter(function (id) { return fullIds.indexOf(id) < 0 && !top3[id]; }).sort(function (a, b) { return top10[b] - top10[a]; }).slice(0, BASIC_CAP);
+      var unknown = Object.keys(top3).length + Object.keys(top10).filter(function (id) { return !top3[id]; }).length - fullIds.length - basicIds.length;
+      var jobs = fullIds.map(function (id) { return { id: id, mask: MASK_FULL, kind: 'ent' }; }).concat(basicIds.map(function (id) { return { id: id, mask: MASK_BASIC, kind: 'pro' }; }));
+      progress(0, jobs.length, 'Looking up ' + jobs.length + ' businesses');
+      return pool(jobs, CONCURRENCY, function (job) {
+        return withRetry(function () { return gcall('places/' + encodeURIComponent(job.id), 'GET', null, job.mask, key); }, 2)
+          .then(function (p) { addUsage(job.kind, 1); return toPlace(p); }, function (err) { addUsage(job.kind, 1); if (err.status === 404 || err.status === 400) return null; throw err; });
+      }, function (done, total) { progress(done, total, 'Looking up business ' + done + ' of ' + total); }).then(function (details) {
+        var places = {}; places[biz.id] = biz;
+        details.forEach(function (p) { if (p) places[p.id] = p; });
+        var scan = { id: 'scan-' + Date.now(), createdAt: new Date().toISOString(), mode: 'live', business: biz, keyword: kw, size: n, spacingM: spacing, unit: unit, regionCode: region, points: pts, places: places, unknown: Math.max(0, unknown) };
+        saveRecent(scan);
+        state.scan = scan; state.sel = null; state.gridFor = biz.id; state.showComp = false;
+        $('step2').classList.add('done');
+        renderAll(true);
+        var a = aggregates(scan, biz.id);
+        setMsg('msg', 'Done. ' + biz.name + (a.found ? ' averages #' + fmt1(a.avg) + ' and is in the top 3 at ' + pct(a.top3, a.n) + ' of dots.' : ' is not in the top 20 anywhere on this grid.'), 'ok');
+        $('titlebar').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }).catch(function (err) { setMsg('msg', friendlyError(err), 'err'); }).then(function () { setBusy(false); });
+  }
+
+  /* recent */
+  function saveRecent(scan) {
+    var list = (lsGet(LS.scans) || []).filter(function (s) { return s.id !== scan.id; });
+    list.unshift(scan); lsSet(LS.scans, list.slice(0, 20)); renderRecent();
+  }
+  function renderRecent() {
+    var list = lsGet(LS.scans) || [];
+    $('recentSec').hidden = !list.length;
+    $('recent').innerHTML = list.slice(0, 8).map(function (s) {
+      return '<li><button type="button" data-scan="' + esc(s.id) + '"><b>' + esc(s.business.name) + '</b><span>' + esc(s.keyword) + ' &middot; ' + s.size + 'x' + s.size + ' &middot; ' + esc(new Date(s.createdAt).toLocaleDateString()) + '</span></button></li>';
+    }).join('');
+  }
+  function loadScan(id) {
+    var s = (lsGet(LS.scans) || []).filter(function (x) { return x.id === id; })[0]; if (!s) return;
+    state.scan = s; state.sel = null; state.gridFor = s.business.id; state.showComp = false;
+    state.chosen = s.business; state.candidates = [s.business];
+    $('bizName').value = s.business.name; $('kw').value = s.keyword;
+    renderFound(); renderAll(true); setMsg('msg', ''); setMsg('msg1', '');
+  }
+
+  /* export */
+  function summaryText() {
+    var s = state.scan, a = aggregates(s, s.business.id), read = compassRead(s, s.business.id);
+    var rows = competitorRows(s).filter(function (r) { return r.id !== s.business.id; }).slice(0, 3), lines = [];
+    lines.push('Local Grid preview for ' + s.business.name + ' on "' + s.keyword + '" (' + s.size + ' x ' + s.size + ' grid, ' + spacingLabel(s) + ' between dots, ' + new Date(s.createdAt).toLocaleDateString() + ').');
+    if (a.found) {
+      lines.push('Average rank #' + fmt1(a.avg) + '. In the top 3 at ' + pct(a.top3, a.n) + ' of dots, in the top 10 at ' + pct(a.top10, a.n) + ', not visible at ' + a.missing + ' of ' + a.n + ' dots.');
+      if (read && read.spread >= 1.5) lines.push('Strongest to the ' + read.strongest + ', weakest to the ' + read.weakest + '.');
+    } else lines.push('Not in the top 20 at any of the ' + a.n + ' dots.');
+    if (rows.length) lines.push('Most visible nearby: ' + rows.map(function (r) { return r.place.name + ' (top 3 at ' + pct(r.agg.top3, a.n) + ' of dots)'; }).join(', ') + '.');
+    if (s.mode !== 'live') lines.push('Sample data, for illustration only.');
+    return lines.join('\n');
+  }
+  function csvText() {
+    var s = state.scan;
+    function q(v) { v = v == null ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+    var out = ['Business,' + q(s.business.name), 'Keyword,' + q(s.keyword), 'Grid,' + s.size + 'x' + s.size, 'Spacing,' + q(spacingLabel(s)), 'Searched,' + q(s.createdAt), 'Mode,' + s.mode, '', 'row,col,dot,latitude,longitude,your_rank,first,second,third'];
+    s.points.forEach(function (pt) {
+      var r = rankAt(pt, s.business.id);
+      out.push([pt.r + 1, pt.c + 1, q(dotName(pt, s.size)), pt.lat.toFixed(6), pt.lng.toFixed(6), pt.ids.length ? (r === null ? '21+' : r) : 'N/A', q(placeName(s, pt.ids[0] || '')), q(placeName(s, pt.ids[1] || '')), q(placeName(s, pt.ids[2] || ''))].join(','));
+    });
+    out.push(''); out.push('business,type,address,in_top3_pct,in_top10_pct,avg_rank,best_rank,rating,reviews,distance');
+    competitorRows(s).forEach(function (row) {
+      out.push([q(row.place.name), q(row.place.type), q(row.place.address), pct(row.agg.top3, s.points.length), pct(row.agg.top10, s.points.length), row.agg.avg === null ? '' : fmt1(row.agg.avg), row.agg.best === null ? '' : row.agg.best, row.place.rating || '', row.place.reviews || '', row.id === s.business.id ? '' : q(distLabel(row.dist, s.unit))].join(','));
+    });
+    return out.join('\n');
+  }
+  function fileName() { var s = state.scan; return ('local-grid-' + s.business.name + '-' + s.keyword).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.csv'; }
+  function saveCsv() {
+    var data = csvText(), name = fileName();
+    if (downloads) { downloads.save({ filename: name, data: data }).then(function () { toast('Saved'); }, function (e) { if (!e || e.code !== 'declined') toast('Could not save the file'); }); return; }
+    if (HOSTED) { toast('Saving is not available in this view'); return; }
+    var url = URL.createObjectURL(new Blob([data], { type: 'text/csv' })), a = document.createElement('a');
+    a.href = url; a.download = name; document.body.appendChild(a); a.click();
+    setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 500); toast('Saved');
+  }
+  function copySummary() {
+    var text = summaryText();
+    function fallback() {
+      var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.left = '-9999px';
+      document.body.appendChild(ta); ta.select(); var ok = false; try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      document.body.removeChild(ta); toast(ok ? 'Summary copied' : 'Could not copy');
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function () { toast('Summary copied'); }, fallback); else fallback();
+  }
+
+  /* settings modal */
+  function openSettings() { $('settings').hidden = false; renderUsage(); keyState(); $('apiKey').focus(); }
+  function closeSettings() { $('settings').hidden = true; }
+
+  /* events */
+  function onDotClick(e) {
+    var d = e.target.closest('.dot');
+    if (d) {
+      e.stopPropagation();
+      var pt = state.scan.points[Number(d.getAttribute('data-i'))]; if (!pt) return;
+      state.sel = { r: pt.r, c: pt.c }; renderMap(false); renderDotCard(); return;
+    }
+    var cm = e.target.closest('.cm');
+    if (cm) { e.stopPropagation(); var id = cm.getAttribute('data-cmp'); state.gridFor = id; renderGridFor(); renderMap(false); renderLeader(); }
+  }
+  $('findBtn').addEventListener('click', findBusiness);
+  $('runBtn').addEventListener('click', runScan);
+  ['bizName', 'bizStreet', 'bizCity', 'bizState', 'bizZip'].forEach(function (id) { $(id).addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); findBusiness(); } }); });
+  $('kw').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); runScan(); } });
+  $('sampleBtn').addEventListener('click', function () {
+    state.scan = buildSample(); state.sel = null; state.gridFor = null; state.showComp = false;
+    renderAll(true); setMsg('msg', ''); setMsg('msg1', '');
+    $('titlebar').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  $('unit').addEventListener('change', function () { fillSpacing(); });
+  $('size').addEventListener('change', updateCost);
+  $('cands').addEventListener('click', function (e) { var b = e.target.closest('button[data-cand]'); if (!b) return; var id = b.getAttribute('data-cand'); state.chosen = state.candidates.filter(function (c) { return c.id === id; })[0] || state.chosen; renderFound(); });
+  $('recent').addEventListener('click', function (e) { var b = e.target.closest('button[data-scan]'); if (b) loadScan(b.getAttribute('data-scan')); });
+  $('clearRecent').addEventListener('click', function () { lsDel(LS.scans); renderRecent(); renderKwSelect(); });
+  $('kwSelect').addEventListener('change', function () {
+    var v = $('kwSelect').value;
+    if (v === '__new') { $('kw').value = ''; $('kw').focus(); renderKwSelect(); return; }
+    if (v === 'sample') return;
+    loadScan(v);
+  });
+  $('gridFor').addEventListener('change', function () { state.gridFor = $('gridFor').value; renderMap(false); renderLeader(); });
+  $('showComp').addEventListener('change', function () { state.showComp = $('showComp').checked; renderMap(false); });
+  $('flat').addEventListener('click', onDotClick);
+  $('flat').addEventListener('mouseover', function (e) { var d = e.target.closest('.dot'); if (d) showTip(d); });
+  $('flat').addEventListener('mouseout', function (e) { if (e.target.closest('.dot')) hideTip(); });
+  document.addEventListener('focusin', function (e) { var d = e.target.closest ? e.target.closest('.dot') : null; if (d) showTip(d); });
+  document.addEventListener('focusout', hideTip);
+  window.addEventListener('scroll', hideTip, { passive: true });
+  $('leader').addEventListener('click', function (e) { var b = e.target.closest('button[data-grid]'); if (!b) return; var id = b.getAttribute('data-grid'); state.gridFor = state.gridFor === id ? state.scan.business.id : id; renderGridFor(); renderMap(false); renderLeader(); });
+  $('copyBtn').addEventListener('click', copySummary);
+  $('csvBtn').addEventListener('click', saveCsv);
+  $('settingsBtn').addEventListener('click', openSettings);
+  $('settingsClose').addEventListener('click', closeSettings);
+  $('settings').addEventListener('click', function (e) { if (e.target === $('settings')) closeSettings(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !$('settings').hidden) closeSettings(); });
+  $('remember').addEventListener('change', function () { if ($('remember').checked) { if (($('apiKey').value || '').trim()) lsSet(LS.key, $('apiKey').value.trim()); } else lsDel(LS.key); keyState(); });
+  $('apiKey').addEventListener('change', function () {
+    var k = ($('apiKey').value || '').trim();
+    if ($('remember').checked) { if (k) lsSet(LS.key, k); else lsDel(LS.key); }
+    keyState(); if (k && !maps.ready && !maps.loading) loadMaps(k);
+  });
+  $('guard').addEventListener('change', function () { lsSet(LS.settings, settings()); });
+  $('resetUsage').addEventListener('click', function () { lsDel(LS.usage); renderUsage(); });
+  $('bizCountry').addEventListener('change', function () {
+    lsSet(LS.settings, settings());
+    if (pacEl) { try { pacEl.includedRegionCodes = [$('bizCountry').value.toLowerCase()]; } catch (e) { /* older element */ } }
+  });
+
+  /* init */
+  fillSpacing('1');
+  applySettings(lsGet(LS.settings));
+  updateCost();
+  var savedKey = lsGet(LS.key);
+  if (savedKey) { $('apiKey').value = savedKey; $('remember').checked = true; }
+  $('hostedNote').hidden = !HOSTED;
+  keyState(); renderUsage(); renderRecent();
+  state.scan = buildSample();
+  renderAll(true);
+  if (currentKey()) loadMaps(currentKey());
+  if (HOSTED) window.claude.use('downloads').then(function (d) { downloads = d || null; }, function () { downloads = null; });
+})();
+</script>
