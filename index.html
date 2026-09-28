@@ -383,12 +383,14 @@
       <h2 id="settingsTitle">Settings</h2>
       <button class="iconbtn" id="settingsClose" aria-label="Close settings">&#10005;</button>
     </div>
-    <h3>Google key</h3>
-    <label for="apiKey">Google Maps Platform key</label>
-    <input type="password" id="apiKey" autocomplete="off" placeholder="Paste key">
-    <label class="check" for="remember" style="margin-top:8px"><input type="checkbox" id="remember"> Remember on this browser</label>
-    <p class="hint" id="keyState"></p>
-    <div class="msg warn" id="hostedNote" hidden>This copy is hosted on claude.ai, which blocks outside connections, so the map and live searches cannot run here. Use the shared link or the downloaded file for the real tool. The sample works everywhere.</div>
+    <div id="keySection">
+      <h3>Google key</h3>
+      <label for="apiKey">Google Maps Platform key</label>
+      <input type="password" id="apiKey" autocomplete="off" placeholder="Paste key">
+      <label class="check" for="remember" style="margin-top:8px"><input type="checkbox" id="remember"> Remember on this browser</label>
+      <p class="hint" id="keyState"></p>
+      <div class="msg warn" id="hostedNote" hidden>This copy is hosted on claude.ai, which blocks outside connections, so the map and live searches cannot run here. Use the shared link for the real tool. The sample works everywhere.</div>
+    </div>
 
     <h3>Free allowance guard</h3>
     <label class="check" for="guard"><input type="checkbox" id="guard" checked> Stop before a search would go past Google's free monthly allowance</label>
@@ -1213,6 +1215,7 @@
   var savedKey = lsGet(LS.key);
   if (savedKey) { $('apiKey').value = savedKey; $('remember').checked = true; }
   $('hostedNote').hidden = !HOSTED;
+  $('keySection').hidden = !!DEFAULT_KEY;
   keyState(); renderUsage(); renderRecent();
   state.scan = buildSample();
   renderAll(true);
