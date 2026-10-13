@@ -182,6 +182,10 @@
     font-size: 10px; font-weight: 900; display: inline-flex; align-items: center; justify-content: center; padding: 0; z-index: 2;
     box-shadow: 0 1px 3px rgba(0,0,0,.3);
   }
+  .home.free { margin-top: 0; }
+  .pdot { position: absolute; transform: translate(-50%, -50%); width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--moz-blue-dark); background: rgba(255,255,255,.8); box-shadow: 0 1px 2px rgba(0,0,0,.25); pointer-events: none; }
+  .cpin { position: absolute; transform: translate(-50%, -50%); width: 30px; height: 30px; pointer-events: none; z-index: 6; }
+  .mapnote .link { margin-left: 4px; }
   .attrib { font-size: 12.5px; color: var(--moz-grey); margin: 10px 0 0; }
   .sugg { position: fixed; z-index: 70; list-style: none; margin: 0; padding: 4px 0; background: #fff; border: 1px solid var(--moz-line); border-radius: 4px; box-shadow: var(--shadow); max-height: 280px; overflow-y: auto; }
   .sugg li { padding: 8px 12px; cursor: pointer; font-size: 14px; line-height: 1.3; }
@@ -316,6 +320,17 @@
           <option value="mi" selected>Miles</option>
           <option value="km">Kilometres</option>
         </select>
+        <label for="centerMode">Center the grid on</label>
+        <select id="centerMode">
+          <option value="biz" selected>The business</option>
+          <option value="custom">Another spot, like downtown</option>
+        </select>
+        <div id="centerBox" hidden>
+          <label for="centerInput">Spot to center on</label>
+          <input type="text" id="centerInput" placeholder="Downtown Denver, a neighborhood or an address" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sugg">
+          <button class="btn small" id="pickBtn" type="button" style="margin-top:8px">Pick on the map</button>
+          <p class="hint" id="centerState"></p>
+        </div>
         <button class="btn primary wide" id="runBtn">Search Now</button>
         <div id="prog" hidden>
           <div class="prog"><i id="progBar"></i></div>
@@ -354,6 +369,7 @@
           <div id="map" class="map"></div>
           <div id="flat" class="flat" hidden></div>
           <div id="mapnote" class="mapnote" hidden></div>
+          <div id="plannote" class="mapnote" hidden>Click the map to center the grid there. The hollow dots show where the search will check, and the blue pin is the business. <button type="button" class="link" id="planDone">Done</button></div>
         </div>
         <p class="attrib" id="attrib"></p>
       </section>
@@ -416,6 +432,7 @@
   var MASK_IDS = 'places.id';
   var MASK_FULL = 'id,displayName,formattedAddress,location,rating,userRatingCount,primaryTypeDisplayName,googleMapsUri';
   var MASK_BASIC = 'id,displayName,formattedAddress,location,primaryTypeDisplayName,googleMapsUri';
+  var MASK_SPOT = 'places.displayName,places.formattedAddress,places.location';
   var FULL_CAP = 15, BASIC_CAP = 25, CONCURRENCY = 5;
   var FREE = { mapLoads: 10000, ids: 10000, pro: 5000, ent: 1000 };
   var M_PER_MI = 1609.344;
@@ -425,7 +442,7 @@
     km: [[0.5, '0.5 km'], [1, '1 km'], [2, '2 km'], [3, '3 km'], [5, '5 km'], [8, '8 km']]
   };
 
-  var state = { scan: null, sel: null, gridFor: null, showComp: false, candidates: [], chosen: null, running: false };
+  var state = { scan: null, sel: null, gridFor: null, showComp: false, candidates: [], chosen: null, running: false, center: null, plan: false };
   var maps = { ready: false, loading: false, failed: false, map: null, overlay: null, fitFor: null };
   var downloads = null;
 
@@ -460,6 +477,20 @@
     var s = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(a.lat * toR) * Math.cos(b.lat * toR) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
     return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
   }
+  function hasLoc(p) { return !!p && typeof p.lat === 'number' && typeof p.lng === 'number' && isFinite(p.lat) && isFinite(p.lng); }
+  function latOf(loc) { return typeof loc.lat === 'function' ? loc.lat() : loc.lat; }
+  function lngOf(loc) { return typeof loc.lng === 'function' ? loc.lng() : loc.lng; }
+  function compass(from, to) {
+    var toR = Math.PI / 180, dLng = (to.lng - from.lng) * toR;
+    var y = Math.sin(dLng) * Math.cos(to.lat * toR);
+    var x = Math.cos(from.lat * toR) * Math.sin(to.lat * toR) - Math.sin(from.lat * toR) * Math.cos(to.lat * toR) * Math.cos(dLng);
+    var deg = (Math.atan2(y, x) / toR + 360) % 360;
+    return ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'][Math.round(deg / 45) % 8];
+  }
+  function offsetText(from, to, unit) {
+    var d = distM(from, to);
+    return d < 50 ? 'right at the business' : distLabel(d, unit) + ' ' + compass(from, to) + ' of the business';
+  }
   function gridPoints(lat, lng, n, spacingM) {
     var c = (n - 1) / 2, pts = [];
     for (var r = 0; r < n; r++) for (var col = 0; col < n; col++) {
@@ -472,13 +503,14 @@
     var v = scan.unit === 'km' ? scan.spacingM / 1000 : scan.spacingM / M_PER_MI;
     return (Math.round(v * 100) / 100) + ' ' + scan.unit;
   }
-  function distLabel(m, unit) {
+  function distVal(m, unit) {
     var v = unit === 'km' ? m / 1000 : m / M_PER_MI;
-    return (v < 10 ? (Math.round(v * 10) / 10).toFixed(1) : Math.round(v)) + ' ' + unit;
+    return v < 10 ? (Math.round(v * 10) / 10).toFixed(1) : String(Math.round(v));
   }
-  function dotName(pt, n) {
+  function distLabel(m, unit) { return distVal(m, unit) + ' ' + unit; }
+  function dotName(pt, n, custom) {
     var c = (n - 1) / 2;
-    if (pt.r === c && pt.c === c) return 'At the business';
+    if (pt.r === c && pt.c === c) return custom ? 'At the grid center' : 'At the business';
     var ns = pt.r < c ? 'north' : pt.r > c ? 'south' : '', ew = pt.c > c ? 'east' : pt.c < c ? 'west' : '';
     var dir = ns && ew ? ns + '-' + ew : (ns || ew);
     var steps = Math.max(Math.abs(pt.r - c), Math.abs(pt.c - c));
@@ -571,12 +603,25 @@
     if (list.length < 2) return null;
     return { strongest: names[list[0].k], weakest: names[list[list.length - 1].k], spread: list[list.length - 1].avg - list[0].avg };
   }
+  function centerRead(s) {
+    var b = s.business, out = 'This grid is centered on ' + s.center.label + (hasLoc(b) ? ', ' + offsetText(b, s.center, s.unit) : '') + '.';
+    var wins = competitorRows(s).filter(function (r) { return r.id !== b.id && r.agg.top3 > 0 && r.distC !== null; }).slice(0, 3);
+    if (wins.length && hasLoc(b)) {
+      var ds = wins.map(function (r) { return r.distC; }), lo = Math.min.apply(null, ds), hi = Math.max.apply(null, ds), bd = distM(b, s.center);
+      var range = distVal(lo, s.unit) === distVal(hi, s.unit) ? distLabel(lo, s.unit) : distVal(lo, s.unit) + ' to ' + distLabel(hi, s.unit);
+      out += ' ' + (wins.length === 1 ? 'The business most often in the top 3 here is ' : 'The ' + wins.length + ' businesses most often in the top 3 here are ') +
+        range + ' from the center; ' + b.name + ' is ' + distLabel(bd, s.unit) + ' away.';
+      if (bd > hi * 1.5 && bd - hi > 800) out += ' Google bases local results mainly on relevance, distance and prominence, so that distance gap is part of the story.';
+    }
+    return out;
+  }
   function competitorRows(scan) {
     var rows = [];
     Object.keys(scan.places).forEach(function (id) {
       var a = aggregates(scan, id);
       if (a.found === 0 && id !== scan.business.id) return;
-      rows.push({ id: id, place: scan.places[id], agg: a, dist: distM(scan.business, scan.places[id]) });
+      var p = scan.places[id];
+      rows.push({ id: id, place: p, agg: a, dist: hasLoc(scan.business) && hasLoc(p) ? distM(scan.business, p) : null, distC: scan.center && hasLoc(p) ? distM(scan.center, p) : null });
     });
     rows.sort(function (x, y) {
       if (y.agg.top3 !== x.agg.top3) return y.agg.top3 - x.agg.top3;
@@ -605,7 +650,8 @@
   function renderTitle() {
     var s = state.scan, b = s.business;
     var html = '<div><h1>' + esc(b.name) + '</h1><div class="sub">' + esc(b.address || '') + '</div>' +
-      '<div class="kwline">Keyword <b>' + esc(s.keyword) + '</b> &middot; ' + s.size + ' x ' + s.size + ' grid &middot; ' + esc(spacingLabel(s)) + ' between dots</div></div>' +
+      '<div class="kwline">Keyword <b>' + esc(s.keyword) + '</b> &middot; ' + s.size + ' x ' + s.size + ' grid &middot; ' + esc(spacingLabel(s)) + ' between dots' +
+      (s.center ? ' &middot; centered on <b>' + esc(s.center.label) + '</b>' : '') + '</div></div>' +
       '<div class="bizmeta"><span class="badge ' + (s.mode === 'live' ? 'live' : 'sample') + '">' + (s.mode === 'live' ? 'Live search' : 'Sample data') + '</span><br>' +
       '<span class="stars">' + (b.rating ? fmt1(b.rating) + ' stars' : 'No rating yet') + '</span>' + (b.reviews ? ' &middot; ' + b.reviews + ' Google reviews' : '') +
       (b.type ? '<br>' + esc(b.type) : '') + (b.mapsUrl ? '<br><a href="' + esc(b.mapsUrl) + '" target="_blank" rel="noopener">Open in Google Maps</a>' : '') + '</div>';
@@ -625,7 +671,7 @@
     if (!a.found) txt = s.business.name + ' does not appear in the top 20 anywhere on this grid for "' + s.keyword + '".';
     else if (read && read.spread >= 1.5) txt = 'Strongest to the ' + read.strongest + ', weakest to the ' + read.weakest + '. Best position on the grid is #' + a.best + '.';
     else txt = 'Visibility is fairly even across the grid. Best position on the grid is #' + a.best + '.';
-    $('read').textContent = txt;
+    $('read').textContent = s.center ? txt + ' ' + centerRead(s) : txt;
   }
   function renderLegend() {
     var items = [['r1', '1', '1'], ['r2', '2', '2 to 3'], ['r3', '4', '4 to 6'], ['r4', '7', '7 to 10'], ['r5', '11', '11 to 15'], ['r6', '16', '16 to 20'], ['r7', '21', '21+'], ['', 'N', 'No results']];
@@ -642,7 +688,7 @@
     var s = state.scan, list = (lsGet(LS.scans) || []).filter(function (x) { return x.business.id === s.business.id; });
     var sel = $('kwSelect'), html = '';
     if (s.mode === 'sample') html += '<option value="sample">Keyword: ' + esc(s.keyword) + ' (sample)</option>';
-    list.forEach(function (x) { html += '<option value="' + esc(x.id) + '">Keyword: ' + esc(x.keyword) + ' &middot; ' + esc(new Date(x.createdAt).toLocaleDateString()) + '</option>'; });
+    list.forEach(function (x) { html += '<option value="' + esc(x.id) + '">Keyword: ' + esc(x.keyword) + (x.center ? ' &middot; around ' + esc(shortLabel(x.center.label)) : '') + ' &middot; ' + esc(new Date(x.createdAt).toLocaleDateString()) + '</option>'; });
     html += '<option value="__new">New keyword for this business</option>';
     sel.innerHTML = html; sel.value = s.mode === 'sample' ? 'sample' : s.id;
   }
@@ -651,12 +697,12 @@
     var el = document.createElement('button');
     el.type = 'button'; el.className = 'dot r' + b + (state.sel && state.sel.r === pt.r && state.sel.c === pt.c ? ' sel' : '');
     el.setAttribute('data-i', String(idx));
-    el.setAttribute('aria-label', dotName(pt, s.size) + ': ' + (r === null ? 'not in the top 20' : 'rank ' + r));
+    el.setAttribute('aria-label', dotName(pt, s.size, !!s.center) + ': ' + (r === null ? 'not in the top 20' : 'rank ' + r));
     el.textContent = rankLabel(r, pt);
     return el;
   }
-  function homePin() {
-    var el = document.createElement('div'); el.className = 'home'; el.setAttribute('aria-hidden', 'true');
+  function homePin(free) {
+    var el = document.createElement('div'); el.className = 'home' + (free ? ' free' : ''); el.setAttribute('aria-hidden', 'true');
     el.innerHTML = '<svg viewBox="0 0 26 34" width="26" height="34"><path d="M13 1C6.4 1 1 6.3 1 12.9 1 21.5 13 33 13 33s12-11.5 12-20.1C25 6.3 19.6 1 13 1z" fill="#0075a8" stroke="#ffffff" stroke-width="2"/><circle cx="13" cy="13" r="4.5" fill="#ffffff"/></svg>';
     return el;
   }
@@ -665,18 +711,43 @@
     el.title = p.name + (p.rating ? ', ' + fmt1(p.rating) + ' stars (' + p.reviews + ')' : ''); el.setAttribute('data-cmp', p.id);
     return el;
   }
+  function planDot() { var el = document.createElement('span'); el.className = 'pdot'; el.setAttribute('aria-hidden', 'true'); return el; }
+  function centerPin() {
+    var el = document.createElement('div'); el.className = 'cpin'; el.setAttribute('aria-hidden', 'true');
+    el.innerHTML = '<svg viewBox="0 0 30 30" width="30" height="30"><circle cx="15" cy="15" r="9.5" fill="rgba(255,255,255,.85)" stroke="#272733" stroke-width="2.5"/><circle cx="15" cy="15" r="3.5" fill="#272733"/><path d="M15 1.5v6M15 22.5v6M1.5 15h6M22.5 15h6" stroke="#272733" stroke-width="2.5" stroke-linecap="round"/></svg>';
+    return el;
+  }
+  function planCenter() { return centerOn() ? state.center : (hasLoc(state.chosen) ? state.chosen : null); }
+  function renderPlan(fit) {
+    var c = planCenter(), biz = hasLoc(state.chosen) ? state.chosen : null, items = [];
+    var n = parseInt($('size').value, 10), mid = (n - 1) / 2;
+    if (c) gridPoints(c.lat, c.lng, n, spacingMeters()).forEach(function (pt) { if (pt.r !== mid || pt.c !== mid) items.push({ lat: pt.lat, lng: pt.lng, el: planDot() }); });
+    if (biz) items.push({ lat: biz.lat, lng: biz.lng, el: homePin(true) });
+    if (c) items.push({ lat: c.lat, lng: c.lng, el: centerPin() });
+    maps.overlay.setItems(items);
+    if (fit && items.length === 1) { maps.map.setCenter({ lat: items[0].lat, lng: items[0].lng }); maps.map.setZoom(13); }
+    else if (fit && items.length) {
+      var b = new google.maps.LatLngBounds(); items.forEach(function (it) { b.extend({ lat: it.lat, lng: it.lng }); });
+      maps.map.fitBounds(b, { top: 56, right: 48, bottom: ($('plannote').offsetHeight || 0) + 48, left: 48 });
+    }
+    maps.fitFor = null;
+    setMapNote('');
+  }
   function renderMap(fit) {
     var s = state.scan;
     var useMap = maps.ready && !maps.failed;
     $('flat').hidden = useMap; $('map').style.visibility = useMap ? 'visible' : 'hidden';
+    $('plannote').hidden = !(useMap && state.plan);
+    if (useMap && state.plan) { renderPlan(fit); return; }
     if (useMap) {
       var items = s.points.map(function (pt, i) { return { lat: pt.lat, lng: pt.lng, el: makeDot(pt, i) }; });
-      items.push({ lat: s.business.lat, lng: s.business.lng, el: homePin() });
+      if (hasLoc(s.business)) items.push({ lat: s.business.lat, lng: s.business.lng, el: homePin(!!s.center) });
       if (state.showComp) competitorRows(s).slice(0, 12).forEach(function (r) { if (r.id !== s.business.id && r.place.lat) items.push({ lat: r.place.lat, lng: r.place.lng, el: compMarker(r.place) }); });
       maps.overlay.setItems(items);
       if (fit || maps.fitFor !== s.id) {
         var b = new google.maps.LatLngBounds();
         s.points.forEach(function (pt) { b.extend({ lat: pt.lat, lng: pt.lng }); });
+        if (s.center && hasLoc(s.business) && distM(s.center, s.business) <= (s.size - 1) * s.spacingM) b.extend({ lat: s.business.lat, lng: s.business.lng });
         maps.map.fitBounds(b, 48); maps.fitFor = s.id;
       }
       setMapNote('');
@@ -685,7 +756,7 @@
       grid.style.gridTemplateColumns = 'repeat(' + s.size + ', 1fr)';
       s.points.forEach(function (pt, i) {
         var w = document.createElement('div'); w.className = 'cellwrap'; w.appendChild(makeDot(pt, i));
-        if (pt.r === (s.size - 1) / 2 && pt.c === (s.size - 1) / 2) w.appendChild(homePin());
+        if (!s.center && pt.r === (s.size - 1) / 2 && pt.c === (s.size - 1) / 2) w.appendChild(homePin(false));
         grid.appendChild(w);
       });
       flat.innerHTML = ''; flat.appendChild(grid);
@@ -699,7 +770,7 @@
   function renderDotCard() {
     var s = state.scan, pt = currentPoint(); if (!pt) { $('dotcard').innerHTML = ''; return; }
     var you = rankAt(pt, s.business.id), n = s.size;
-    var html = '<div class="cardhead"><h2>Rankings at this dot</h2><span class="where">' + esc(dotName(pt, n)) + '</span></div>';
+    var html = '<div class="cardhead"><h2>Rankings at this dot</h2><span class="where">' + esc(dotName(pt, n, !!s.center)) + '</span></div>';
     if (!pt.ids.length) { html += '<p class="none">Google returned no results at this dot.</p>'; $('dotcard').innerHTML = html; return; }
     html += '<p class="none" style="margin:0 0 8px">' + esc(s.business.name) + (you === null ? ' is not in the top 20 here.' : ' ranks #' + you + ' here.') + '</p>';
     html += '<div class="tbl-wrap"><table><thead><tr><th>Rank</th><th>Business</th><th class="num">Reviews</th><th class="num">Rating</th></tr></thead><tbody>';
@@ -715,10 +786,11 @@
     $('dotcard').innerHTML = html;
   }
   function renderLeader() {
-    var s = state.scan, rows = competitorRows(s).slice(0, 12), n = s.points.length;
+    var s = state.scan, all = competitorRows(s), rows = all.slice(0, 12), n = s.points.length, shown = rows.length;
+    if (!rows.some(function (r) { return r.id === s.business.id; })) rows = rows.concat(all.filter(function (r) { return r.id === s.business.id; }));
     var maxTop3 = rows.reduce(function (m, r) { return Math.max(m, r.agg.top3); }, 0) || 1;
-    var html = '<div class="cardhead"><h2>Leaderboard across the grid</h2><span class="where">' + rows.length + ' businesses appear in the top 10 somewhere</span></div>' +
-      '<div class="tbl-wrap"><table><thead><tr><th>Business</th><th class="num">Top 3</th><th class="num">Avg rank</th><th class="num">Best</th><th class="num">Reviews</th><th class="num">Rating</th><th class="num">Distance</th><th></th></tr></thead><tbody>';
+    var html = '<div class="cardhead"><h2>Leaderboard across the grid</h2><span class="where">' + shown + ' businesses appear in the top 10 somewhere</span></div>' +
+      '<div class="tbl-wrap"><table><thead><tr><th>Business</th><th class="num">Top 3</th><th class="num">Avg rank</th><th class="num">Best</th><th class="num">Reviews</th><th class="num">Rating</th><th class="num">' + (s.center ? 'To center' : 'Distance') + '</th><th></th></tr></thead><tbody>';
     rows.forEach(function (row) {
       var isYou = row.id === s.business.id;
       html += '<tr class="' + (isYou ? 'you' : '') + '"><td>' + esc(row.place.name) + (isYou ? '<span class="youtag">You</span>' : '') +
@@ -726,7 +798,7 @@
         '<td class="num"><span class="bar2" style="width:' + Math.round(48 * row.agg.top3 / maxTop3) + 'px"></span>' + pct(row.agg.top3, n) + '</td>' +
         '<td class="num">' + (row.agg.avg === null ? '' : fmt1(row.agg.avg)) + '</td><td class="num">' + (row.agg.best === null ? '' : '#' + row.agg.best) + '</td>' +
         '<td class="num">' + (row.place.reviews || '') + '</td><td class="num">' + (row.place.rating ? fmt1(row.place.rating) : '') + '</td>' +
-        '<td class="num">' + (isYou ? '' : esc(distLabel(row.dist, s.unit))) + '</td>' +
+        '<td class="num">' + (s.center ? (row.distC === null ? '' : esc(distLabel(row.distC, s.unit))) : (isYou || row.dist === null ? '' : esc(distLabel(row.dist, s.unit)))) + '</td>' +
         '<td>' + (isYou ? '' : '<button type="button" class="rowbtn' + (state.gridFor === row.id ? ' on' : '') + '" data-grid="' + esc(row.id) + '">' + (state.gridFor === row.id ? 'Showing' : 'Show grid') + '</button>') + '</td></tr>';
     });
     html += '</tbody></table></div>';
@@ -740,7 +812,7 @@
     var s = state.scan; if (!s) return;
     var pt = s.points[Number(el.getAttribute('data-i'))]; if (!pt) return;
     var you = rankAt(pt, s.business.id);
-    var html = '<b>' + esc(dotName(pt, s.size)) + '</b><span class="you">' + esc(s.business.name) + ': ' + (pt.ids.length ? (you === null ? 'not in top 20' : '#' + you) : 'no results') + '</span>';
+    var html = '<b>' + esc(dotName(pt, s.size, !!s.center)) + '</b><span class="you">' + esc(s.business.name) + ': ' + (pt.ids.length ? (you === null ? 'not in top 20' : '#' + you) : 'no results') + '</span>';
     var others = pt.ids.filter(function (id) { return id !== s.business.id; }).slice(0, 4);
     if (others.length) html += '<ol>' + others.map(function (id) { return '<li>' + esc(placeName(s, id)) + ' (#' + (pt.ids.indexOf(id) + 1) + ')</li>'; }).join('') + '</ol>';
     tip.innerHTML = html; tip.hidden = false;
@@ -787,6 +859,11 @@
         styles: [{ featureType: 'poi', stylers: [{ visibility: 'off' }] }, { featureType: 'transit', stylers: [{ visibility: 'off' }] }]
       });
       maps.overlay = new GridOverlay(); maps.overlay.setMap(maps.map);
+      maps.map.addListener('click', function (e) {
+        if (!state.plan || !e || !e.latLng) return;
+        $('centerInput').value = 'Picked on the map';
+        setCenter({ lat: e.latLng.lat(), lng: e.latLng.lng(), label: 'the spot picked on the map', full: 'Picked on the map' }, false);
+      });
       setupAutocomplete();
       var layer = $('map');
       layer.addEventListener('click', onDotClick);
@@ -824,8 +901,11 @@
   }
   function placeSugg() {
     if (!pac.input) return;
-    var el = $('sugg'), r = pac.input.getBoundingClientRect();
-    el.style.left = r.left + 'px'; el.style.top = (r.bottom + 4) + 'px'; el.style.width = r.width + 'px';
+    var el = $('sugg'), r = pac.input.getBoundingClientRect(), below = window.innerHeight - r.bottom - 12, above = r.top - 12;
+    var up = below < 180 && above > below;
+    el.style.maxHeight = Math.max(120, Math.min(280, up ? above : below)) + 'px';
+    el.style.left = r.left + 'px'; el.style.width = r.width + 'px';
+    el.style.top = (up ? Math.max(8, r.top - 4 - el.offsetHeight) : r.bottom + 4) + 'px';
   }
   function renderSugg() {
     var el = $('sugg');
@@ -843,7 +923,11 @@
     if (!pac.token) pac.token = new pac.Token();
     pac.seq += 1; var seq = pac.seq;
     var req = { input: text, sessionToken: pac.token, includedRegionCodes: [$('bizCountry').value.toLowerCase()], language: 'en' };
-    pac.Suggestion.fetchAutocompleteSuggestions(req).then(function (res) {
+    if (input === $('centerInput') && hasLoc(state.chosen)) req.locationBias = { center: { lat: state.chosen.lat, lng: state.chosen.lng }, radius: 50000 };
+    pac.Suggestion.fetchAutocompleteSuggestions(req).catch(function (e) {
+      if (!req.locationBias) throw e;
+      delete req.locationBias; return pac.Suggestion.fetchAutocompleteSuggestions(req);
+    }).then(function (res) {
       if (seq !== pac.seq || pac.input !== input) return;
       pac.items = (res.suggestions || []).map(function (s) {
         var p = s.placePrediction; if (!p) return null;
@@ -853,9 +937,9 @@
     }).catch(function () { hideSugg(); });
   }
   function chooseSugg(i) {
-    var it = pac.items[i]; if (!it) return;
+    var it = pac.items[i], input = pac.input; if (!it) return;
     hideSugg(); pac.token = null;
-    onPlacePicked(it.pred.toPlace());
+    if (input === $('centerInput')) onCenterPicked(it); else onPlacePicked(it.pred.toPlace());
   }
   function onPlacePicked(place) {
     place.fetchFields({ fields: ['displayName', 'formattedAddress', 'addressComponents', 'location', 'types'] }).then(function () {
@@ -882,7 +966,7 @@
       var lat = loc ? (typeof loc.lat === 'function' ? loc.lat() : loc.lat) : null;
       var lng = loc ? (typeof loc.lng === 'function' ? loc.lng() : loc.lng) : null;
       state.chosen = { id: place.id, name: name, address: place.formattedAddress || '', lat: lat, lng: lng, rating: null, reviews: 0, type: '', mapsUrl: '' };
-      state.candidates = [state.chosen]; renderFound();
+      state.candidates = [state.chosen]; renderFound(); chosenChanged();
       $('step1').classList.add('done');
       setMsg('msg1', 'Picked from Google. Go to step 2.', 'ok');
       var key = currentKey();
@@ -896,6 +980,70 @@
         }
       }).catch(function () { /* rating stays blank until the search runs */ });
     }).catch(function () { setMsg('msg1', 'Could not read that place. Fill the fields in by hand.', 'err'); });
+  }
+
+  /* grid center: the business by default, or any spot such as downtown or part of a service area */
+  function centerOn() { return $('centerMode').value === 'custom'; }
+  function shortLabel(t) { t = String(t || ''); return t.length > 24 ? t.slice(0, 23) + '...' : t; }
+  function renderCenterBox() { $('centerBox').hidden = !centerOn(); updateCenterState(); }
+  function updateCenterState() {
+    var c = state.center, b = state.chosen;
+    $('centerState').textContent = c
+      ? 'The grid will center on ' + c.label + (hasLoc(b) ? ', ' + offsetText(b, c, $('unit').value) : '') + '. ' + (b ? b.name : 'The business') + ' is still the one being tracked.'
+      : 'Type a place and pick it from the list, or press Pick on the map and click where the grid should go. ' + (b ? b.name : 'The business') + ' is still the one being tracked.';
+    $('pickBtn').textContent = state.plan ? 'Done picking' : 'Pick on the map';
+  }
+  function setPickCursor(on) { if (maps.map) maps.map.setOptions({ draggableCursor: on ? 'crosshair' : null }); }
+  function setCenter(c, fit) {
+    state.center = c;
+    $('centerMode').value = 'custom'; renderCenterBox(); setMsg('msg', '');
+    if (maps.ready && !maps.failed) { state.plan = true; setPickCursor(true); renderMap(fit); }
+    updateCenterState();
+  }
+  function enterPlan() {
+    if (!maps.ready || maps.failed) { setMsg('msg', 'The map has not loaded, so type a place to center on instead.', 'warn'); return; }
+    state.plan = true; setPickCursor(true); renderMap(true); updateCenterState();
+  }
+  function leavePlan() {
+    if (!state.plan) return false;
+    state.plan = false; setPickCursor(false); maps.fitFor = null; $('plannote').hidden = true; updateCenterState();
+    return true;
+  }
+  function exitPlan() { if (leavePlan() && state.scan) renderMap(true); }
+  function chosenChanged() {
+    var b = state.chosen; if (!b) return;
+    if (!hasLoc(b)) $('centerMode').value = 'custom';
+    else if (state.center && distM(b, state.center) > 50000) { state.center = null; $('centerInput').value = ''; $('centerMode').value = 'biz'; }
+    renderCenterBox();
+    if (state.plan) renderMap(true);
+  }
+  function onCenterPicked(it) {
+    var place = it.pred.toPlace(), text = it.main + (it.secondary ? ', ' + it.secondary : '');
+    $('centerInput').value = text;
+    place.fetchFields({ fields: ['location'] }).then(function () {
+      addUsage('pro', 1);
+      var loc = place.location; if (!loc) throw new Error('No location');
+      setCenter({ lat: latOf(loc), lng: lngOf(loc), label: it.main || text, full: text }, true);
+    }).catch(function () { setMsg('msg', 'Google could not put that spot on the map. Try another one, or use Pick on the map.', 'err'); });
+  }
+  function findCenterByText() {
+    var text = $('centerInput').value.trim(), key = currentKey();
+    if (state.center && text && text === state.center.full) return;
+    if (!text) { setMsg('msg', 'Type a place to center the grid on, such as "downtown Denver".', 'err'); return; }
+    if (!key) { setMsg('msg', 'Add a Google key in Settings (gear icon, top right) first.', 'err'); openSettings(); return; }
+    if ($('guard').checked && usage().pro + 1 > FREE.pro) { setMsg('msg', 'This month\'s free allowance for lookups is used up. Turn off the guard in Settings to continue anyway.', 'warn'); return; }
+    var body = { textQuery: text, pageSize: 1, languageCode: 'en', regionCode: $('bizCountry').value };
+    if (hasLoc(state.chosen)) body.locationBias = { circle: { center: { latitude: state.chosen.lat, longitude: state.chosen.lng }, radius: 50000 } };
+    setMsg('msg', 'Finding that spot on Google.');
+    withRetry(function () { return gcall('places:searchText', 'POST', body, MASK_SPOT, key); }, 2).then(function (res) {
+      addUsage('pro', 1);
+      var p = (res.places || [])[0];
+      if (!p || !p.location) { setMsg('msg', 'Google could not find that spot. Try a fuller name, or use Pick on the map.', 'err'); return; }
+      var name = p.displayName && p.displayName.text ? p.displayName.text : text;
+      var full = p.formattedAddress && p.formattedAddress.indexOf(name) !== 0 ? name + ', ' + p.formattedAddress : (p.formattedAddress || name);
+      $('centerInput').value = full;
+      setCenter({ lat: p.location.latitude, lng: p.location.longitude, label: name, full: full }, true);
+    }).catch(function (err) { setMsg('msg', friendlyError(err), 'err'); });
   }
 
   /* controls */
@@ -998,7 +1146,7 @@
       addUsage('ent', 1);
       var places = (res.places || []).map(toPlace);
       if (!places.length) { state.candidates = []; state.chosen = null; renderFound(); setMsg('msg1', 'Google found nothing for that. Check the spelling and try adding the street or postcode.', 'err'); return; }
-      state.candidates = places; state.chosen = places[0]; renderFound();
+      state.candidates = places; state.chosen = places[0]; renderFound(); chosenChanged();
       if (!$('kw').value.trim() && places[0].type) $('kw').value = places[0].type.toLowerCase();
       setMsg('msg1', 'Found it. Check the match, then go to step 2.', 'ok');
       $('step1').classList.add('done'); $('kw').focus();
@@ -1008,7 +1156,8 @@
     var box = $('found'), ch = state.chosen;
     if (!ch) { box.hidden = true; return; }
     box.hidden = false; $('foundName').textContent = ch.name; $('foundAddr').textContent = ch.address;
-    $('foundMeta').textContent = (ch.type ? ch.type + '. ' : '') + (ch.rating ? fmt1(ch.rating) + ' stars, ' + ch.reviews + ' Google reviews.' : 'No rating yet.');
+    $('foundMeta').textContent = (ch.type ? ch.type + '. ' : '') + (ch.rating ? fmt1(ch.rating) + ' stars, ' + ch.reviews + ' Google reviews.' : 'No rating yet.') +
+      (hasLoc(ch) ? '' : ' Google shows no public address, which is normal for a service area business, so center the grid on a spot in step 2.');
     var others = state.candidates.filter(function (c) { return c.id !== ch.id; });
     $('candWrap').hidden = !others.length;
     $('cands').innerHTML = others.map(function (c) { return '<li><button type="button" data-cand="' + esc(c.id) + '"><b>' + esc(c.name) + '</b><span>' + esc(c.address) + '</span></button></li>'; }).join('');
@@ -1017,12 +1166,16 @@
     var key = currentKey(), kw = $('kw').value.trim();
     setMsg('msg', '');
     if (!key) { setMsg('msg', 'Add a Google key in Settings (gear icon, top right) first.', 'err'); openSettings(); return; }
-    if (!state.chosen) { setMsg('msg', 'Do step 1 first so the grid is centred on the right business.', 'err'); $('bizName').focus(); return; }
+    if (!state.chosen) { setMsg('msg', 'Do step 1 first so the tool knows which business to track.', 'err'); $('bizName').focus(); return; }
     if (!kw) { setMsg('msg', 'Type what a customer would search for, such as "emergency plumber".', 'err'); $('kw').focus(); return; }
     var biz = state.chosen, n = parseInt($('size').value, 10), spacing = spacingMeters(), region = $('bizCountry').value, unit = $('unit').value;
+    if (centerOn() && !state.center) { setMsg('msg', 'Pick the spot to center the grid on first: type a place, or press Pick on the map and click.', 'err'); $('centerInput').focus(); return; }
+    if (!centerOn() && !hasLoc(biz)) { setMsg('msg', 'Google shows no public address for ' + biz.name + ', so choose "Another spot" under Center the grid on and pick one.', 'err'); return; }
+    var center = centerOn() ? { lat: state.center.lat, lng: state.center.lng, label: state.center.label, full: state.center.full || '' } : null;
+    var origin = center || biz;
     var problem = budgetProblem(n * n);
     if (problem) { setMsg('msg', 'This search would go past this month\'s free allowance for ' + problem + '. Try a smaller grid, wait for next month, or turn off the guard in Settings.', 'warn'); return; }
-    var pts = gridPoints(biz.lat, biz.lng, n, spacing), radius = Math.min(50000, Math.max(250, Math.round(spacing / 2)));
+    var pts = gridPoints(origin.lat, origin.lng, n, spacing), radius = Math.min(50000, Math.max(250, Math.round(spacing / 2)));
     setBusy(true); progress(0, pts.length, 'Checking dot 0 of ' + pts.length);
     lsSet(LS.settings, settings());
     pool(pts, CONCURRENCY, function (pt) {
@@ -1047,13 +1200,13 @@
       }, function (done, total) { progress(done, total, 'Looking up business ' + done + ' of ' + total); }).then(function (details) {
         var places = {}; places[biz.id] = biz;
         details.forEach(function (p) { if (p) places[p.id] = p; });
-        var scan = { id: 'scan-' + Date.now(), createdAt: new Date().toISOString(), mode: 'live', business: biz, keyword: kw, size: n, spacingM: spacing, unit: unit, regionCode: region, points: pts, places: places, unknown: Math.max(0, unknown) };
+        var scan = { id: 'scan-' + Date.now(), createdAt: new Date().toISOString(), mode: 'live', business: biz, keyword: kw, size: n, spacingM: spacing, unit: unit, regionCode: region, center: center, points: pts, places: places, unknown: Math.max(0, unknown) };
         saveRecent(scan);
         state.scan = scan; state.sel = null; state.gridFor = biz.id; state.showComp = false;
         $('step2').classList.add('done');
-        renderAll(true);
+        leavePlan(); renderAll(true);
         var a = aggregates(scan, biz.id);
-        setMsg('msg', 'Done. ' + biz.name + (a.found ? ' averages #' + fmt1(a.avg) + ' and is in the top 3 at ' + pct(a.top3, a.n) + ' of dots.' : ' is not in the top 20 anywhere on this grid.'), 'ok');
+        setMsg('msg', 'Done. ' + (center ? 'Around ' + center.label + ', ' : '') + biz.name + (a.found ? ' averages #' + fmt1(a.avg) + ' and is in the top 3 at ' + pct(a.top3, a.n) + ' of dots.' : ' is not in the top 20 anywhere on this grid.'), 'ok');
         $('titlebar').scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
     }).catch(function (err) { setMsg('msg', friendlyError(err), 'err'); }).then(function () { setBusy(false); });
@@ -1068,7 +1221,7 @@
     var list = lsGet(LS.scans) || [];
     $('recentSec').hidden = !list.length;
     $('recent').innerHTML = list.slice(0, 8).map(function (s) {
-      return '<li><button type="button" data-scan="' + esc(s.id) + '"><b>' + esc(s.business.name) + '</b><span>' + esc(s.keyword) + ' &middot; ' + s.size + 'x' + s.size + ' &middot; ' + esc(new Date(s.createdAt).toLocaleDateString()) + '</span></button></li>';
+      return '<li><button type="button" data-scan="' + esc(s.id) + '"><b>' + esc(s.business.name) + '</b><span>' + esc(s.keyword) + ' &middot; ' + s.size + 'x' + s.size + (s.center ? ' &middot; around ' + esc(shortLabel(s.center.label)) : '') + ' &middot; ' + esc(new Date(s.createdAt).toLocaleDateString()) + '</span></button></li>';
     }).join('');
   }
   function loadScan(id) {
@@ -1076,6 +1229,8 @@
     state.scan = s; state.sel = null; state.gridFor = s.business.id; state.showComp = false;
     state.chosen = s.business; state.candidates = [s.business];
     $('bizName').value = s.business.name; $('kw').value = s.keyword;
+    state.center = s.center || null; $('centerMode').value = s.center ? 'custom' : 'biz'; $('centerInput').value = s.center ? (s.center.full || s.center.label) : '';
+    leavePlan(); renderCenterBox();
     renderFound(); renderAll(true); setMsg('msg', ''); setMsg('msg1', '');
   }
 
@@ -1088,6 +1243,7 @@
       lines.push('Average rank #' + fmt1(a.avg) + '. In the top 3 at ' + pct(a.top3, a.n) + ' of dots, in the top 10 at ' + pct(a.top10, a.n) + ', not visible at ' + a.missing + ' of ' + a.n + ' dots.');
       if (read && read.spread >= 1.5) lines.push('Strongest to the ' + read.strongest + ', weakest to the ' + read.weakest + '.');
     } else lines.push('Not in the top 20 at any of the ' + a.n + ' dots.');
+    if (s.center) lines.push(centerRead(s));
     if (rows.length) lines.push('Most visible nearby: ' + rows.map(function (r) { return r.place.name + ' (top 3 at ' + pct(r.agg.top3, a.n) + ' of dots)'; }).join(', ') + '.');
     if (s.mode !== 'live') lines.push('Sample data, for illustration only.');
     return lines.join('\n');
@@ -1095,18 +1251,21 @@
   function csvText() {
     var s = state.scan;
     function q(v) { v = v == null ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
-    var out = ['Business,' + q(s.business.name), 'Keyword,' + q(s.keyword), 'Grid,' + s.size + 'x' + s.size, 'Spacing,' + q(spacingLabel(s)), 'Searched,' + q(s.createdAt), 'Mode,' + s.mode, '', 'row,col,dot,latitude,longitude,your_rank,first,second,third'];
+    var out = ['Business,' + q(s.business.name), 'Keyword,' + q(s.keyword), 'Grid,' + s.size + 'x' + s.size, 'Spacing,' + q(spacingLabel(s)), 'Searched,' + q(s.createdAt), 'Mode,' + s.mode];
+    if (s.center) out.push('Center,' + q(s.center.label), 'Center latitude,' + s.center.lat.toFixed(6), 'Center longitude,' + s.center.lng.toFixed(6));
+    out.push('', 'row,col,dot,latitude,longitude,your_rank,first,second,third');
     s.points.forEach(function (pt) {
       var r = rankAt(pt, s.business.id);
-      out.push([pt.r + 1, pt.c + 1, q(dotName(pt, s.size)), pt.lat.toFixed(6), pt.lng.toFixed(6), pt.ids.length ? (r === null ? '21+' : r) : 'N/A', q(placeName(s, pt.ids[0] || '')), q(placeName(s, pt.ids[1] || '')), q(placeName(s, pt.ids[2] || ''))].join(','));
+      out.push([pt.r + 1, pt.c + 1, q(dotName(pt, s.size, !!s.center)), pt.lat.toFixed(6), pt.lng.toFixed(6), pt.ids.length ? (r === null ? '21+' : r) : 'N/A', q(placeName(s, pt.ids[0] || '')), q(placeName(s, pt.ids[1] || '')), q(placeName(s, pt.ids[2] || ''))].join(','));
     });
-    out.push(''); out.push('business,type,address,in_top3_pct,in_top10_pct,avg_rank,best_rank,rating,reviews,distance');
+    out.push(''); out.push('business,type,address,in_top3_pct,in_top10_pct,avg_rank,best_rank,rating,reviews,' + (s.center ? 'distance_to_business,distance_to_center' : 'distance'));
     competitorRows(s).forEach(function (row) {
-      out.push([q(row.place.name), q(row.place.type), q(row.place.address), pct(row.agg.top3, s.points.length), pct(row.agg.top10, s.points.length), row.agg.avg === null ? '' : fmt1(row.agg.avg), row.agg.best === null ? '' : row.agg.best, row.place.rating || '', row.place.reviews || '', row.id === s.business.id ? '' : q(distLabel(row.dist, s.unit))].join(','));
+      out.push([q(row.place.name), q(row.place.type), q(row.place.address), pct(row.agg.top3, s.points.length), pct(row.agg.top10, s.points.length), row.agg.avg === null ? '' : fmt1(row.agg.avg), row.agg.best === null ? '' : row.agg.best, row.place.rating || '', row.place.reviews || '', row.id === s.business.id || row.dist === null ? '' : q(distLabel(row.dist, s.unit))]
+        .concat(s.center ? [row.distC === null ? '' : q(distLabel(row.distC, s.unit))] : []).join(','));
     });
     return out.join('\n');
   }
-  function fileName() { var s = state.scan; return ('local-grid-' + s.business.name + '-' + s.keyword).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.csv'; }
+  function fileName() { var s = state.scan; return ('local-grid-' + s.business.name + '-' + s.keyword + (s.center ? '-around-' + s.center.label : '')).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.csv'; }
   function saveCsv() {
     var data = csvText(), name = fileName();
     if (downloads) { downloads.save({ filename: name, data: data }).then(function () { toast('Saved'); }, function (e) { if (!e || e.code !== 'declined') toast('Could not save the file'); }); return; }
@@ -1143,7 +1302,7 @@
   $('findBtn').addEventListener('click', findBusiness);
   $('runBtn').addEventListener('click', runScan);
   ['bizCity', 'bizState', 'bizZip'].forEach(function (id) { $(id).addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); findBusiness(); } }); });
-  ['bizName', 'bizStreet'].forEach(function (id) {
+  ['bizName', 'bizStreet', 'centerInput'].forEach(function (id) {
     var input = $(id);
     input.addEventListener('input', function () {
       clearTimeout(pac.timer); pac.input = input;
@@ -1158,7 +1317,7 @@
         e.preventDefault();
         if (open && pac.active >= 0) { chooseSugg(pac.active); return; }
         if (open && pac.items.length === 1) { chooseSugg(0); return; }
-        hideSugg(); findBusiness();
+        hideSugg(); if (id === 'centerInput') findCenterByText(); else findBusiness();
       }
     });
     input.addEventListener('blur', function () { setTimeout(function () { if (document.activeElement !== input) hideSugg(); }, 180); });
@@ -1168,13 +1327,15 @@
   window.addEventListener('resize', function () { if (!$('sugg').hidden) placeSugg(); });
   $('kw').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); runScan(); } });
   $('sampleBtn').addEventListener('click', function () {
+    leavePlan();
     state.scan = buildSample(); state.sel = null; state.gridFor = null; state.showComp = false;
     renderAll(true); setMsg('msg', ''); setMsg('msg1', '');
     $('titlebar').scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
-  $('unit').addEventListener('change', function () { fillSpacing(); });
-  $('size').addEventListener('change', updateCost);
-  $('cands').addEventListener('click', function (e) { var b = e.target.closest('button[data-cand]'); if (!b) return; var id = b.getAttribute('data-cand'); state.chosen = state.candidates.filter(function (c) { return c.id === id; })[0] || state.chosen; renderFound(); });
+  $('unit').addEventListener('change', function () { fillSpacing(); updateCenterState(); if (state.plan) renderMap(false); });
+  $('size').addEventListener('change', function () { updateCost(); if (state.plan) renderMap(false); });
+  $('spacing').addEventListener('change', function () { if (state.plan) renderMap(false); });
+  $('cands').addEventListener('click', function (e) { var b = e.target.closest('button[data-cand]'); if (!b) return; var id = b.getAttribute('data-cand'); state.chosen = state.candidates.filter(function (c) { return c.id === id; })[0] || state.chosen; renderFound(); chosenChanged(); });
   $('recent').addEventListener('click', function (e) { var b = e.target.closest('button[data-scan]'); if (b) loadScan(b.getAttribute('data-scan')); });
   $('clearRecent').addEventListener('click', function () { lsDel(LS.scans); renderRecent(); renderKwSelect(); });
   $('kwSelect').addEventListener('change', function () {
@@ -1183,21 +1344,31 @@
     if (v === 'sample') return;
     loadScan(v);
   });
-  $('gridFor').addEventListener('change', function () { state.gridFor = $('gridFor').value; renderMap(false); renderLeader(); });
-  $('showComp').addEventListener('change', function () { state.showComp = $('showComp').checked; renderMap(false); });
+  $('gridFor').addEventListener('change', function () { leavePlan(); state.gridFor = $('gridFor').value; renderMap(false); renderLeader(); });
+  $('showComp').addEventListener('change', function () { leavePlan(); state.showComp = $('showComp').checked; renderMap(false); });
   $('flat').addEventListener('click', onDotClick);
   $('flat').addEventListener('mouseover', function (e) { var d = e.target.closest('.dot'); if (d) showTip(d); });
   $('flat').addEventListener('mouseout', function (e) { if (e.target.closest('.dot')) hideTip(); });
   document.addEventListener('focusin', function (e) { var d = e.target.closest ? e.target.closest('.dot') : null; if (d) showTip(d); });
   document.addEventListener('focusout', hideTip);
   window.addEventListener('scroll', function () { hideTip(); if (!$('sugg').hidden) placeSugg(); }, { passive: true });
-  $('leader').addEventListener('click', function (e) { var b = e.target.closest('button[data-grid]'); if (!b) return; var id = b.getAttribute('data-grid'); state.gridFor = state.gridFor === id ? state.scan.business.id : id; renderGridFor(); renderMap(false); renderLeader(); });
+  $('leader').addEventListener('click', function (e) { var b = e.target.closest('button[data-grid]'); if (!b) return; leavePlan(); var id = b.getAttribute('data-grid'); state.gridFor = state.gridFor === id ? state.scan.business.id : id; renderGridFor(); renderMap(false); renderLeader(); });
   $('copyBtn').addEventListener('click', copySummary);
   $('csvBtn').addEventListener('click', saveCsv);
   $('settingsBtn').addEventListener('click', openSettings);
   $('settingsClose').addEventListener('click', closeSettings);
   $('settings').addEventListener('click', function (e) { if (e.target === $('settings')) closeSettings(); });
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !$('settings').hidden) closeSettings(); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' || e.defaultPrevented) return;
+    if (!$('settings').hidden) closeSettings(); else if (state.plan) exitPlan();
+  });
+  $('centerMode').addEventListener('change', function () {
+    renderCenterBox();
+    if (!centerOn()) { exitPlan(); return; }
+    if (maps.ready && !maps.failed && (state.center || hasLoc(state.chosen))) enterPlan(); else $('centerInput').focus();
+  });
+  $('pickBtn').addEventListener('click', function () { if (state.plan) exitPlan(); else enterPlan(); });
+  $('planDone').addEventListener('click', exitPlan);
   $('remember').addEventListener('change', function () { if ($('remember').checked) { if (($('apiKey').value || '').trim()) lsSet(LS.key, $('apiKey').value.trim()); } else lsDel(LS.key); keyState(); });
   $('apiKey').addEventListener('change', function () {
     var k = ($('apiKey').value || '').trim();
@@ -1212,6 +1383,7 @@
   fillSpacing('1');
   applySettings(lsGet(LS.settings));
   updateCost();
+  renderCenterBox();
   var savedKey = lsGet(LS.key);
   if (savedKey) { $('apiKey').value = savedKey; $('remember').checked = true; }
   $('hostedNote').hidden = !HOSTED;
