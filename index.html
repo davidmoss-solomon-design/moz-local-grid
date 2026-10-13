@@ -185,7 +185,9 @@
   .home.free { margin-top: 0; }
   .pdot { position: absolute; transform: translate(-50%, -50%); width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--moz-blue-dark); background: rgba(255,255,255,.8); box-shadow: 0 1px 2px rgba(0,0,0,.25); pointer-events: none; }
   .cpin { position: absolute; transform: translate(-50%, -50%); width: 30px; height: 30px; pointer-events: none; z-index: 6; }
-  .mapnote .link { margin-left: 4px; }
+  .mapnote.top { top: 12px; bottom: auto; right: 64px; }
+  .planbtns { display: flex; gap: 14px; align-items: center; margin-top: 8px; }
+  .planbtns .btn { margin-top: 0; }
   .attrib { font-size: 12.5px; color: var(--moz-grey); margin: 10px 0 0; }
   .sugg { position: fixed; z-index: 70; list-style: none; margin: 0; padding: 4px 0; background: #fff; border: 1px solid var(--moz-line); border-radius: 4px; box-shadow: var(--shadow); max-height: 280px; overflow-y: auto; }
   .sugg li { padding: 8px 12px; cursor: pointer; font-size: 14px; line-height: 1.3; }
@@ -320,15 +322,15 @@
           <option value="mi" selected>Miles</option>
           <option value="km">Kilometres</option>
         </select>
-        <label for="centerMode">Center the grid on</label>
+        <label for="centerMode">Center point</label>
         <select id="centerMode">
-          <option value="biz" selected>The business</option>
-          <option value="custom">Another spot, like downtown</option>
+          <option value="biz" selected>Business location</option>
+          <option value="custom">Custom location</option>
         </select>
         <div id="centerBox" hidden>
-          <label for="centerInput">Spot to center on</label>
-          <input type="text" id="centerInput" placeholder="Downtown Denver, a neighborhood or an address" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sugg">
-          <button class="btn small" id="pickBtn" type="button" style="margin-top:8px">Pick on the map</button>
+          <label for="centerInput">Search for a location</label>
+          <input type="text" id="centerInput" placeholder="Neighborhood, landmark or address" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sugg">
+          <button class="btn small" id="pickBtn" type="button" style="margin-top:8px">Drop a pin on the map</button>
           <p class="hint" id="centerState"></p>
         </div>
         <button class="btn primary wide" id="runBtn">Search Now</button>
@@ -369,7 +371,8 @@
           <div id="map" class="map"></div>
           <div id="flat" class="flat" hidden></div>
           <div id="mapnote" class="mapnote" hidden></div>
-          <div id="plannote" class="mapnote" hidden>Click the map to center the grid there. The hollow dots show where the search will check, and the blue pin is the business. <button type="button" class="link" id="planDone">Done</button></div>
+          <div id="plannote" class="mapnote top" hidden><b>Click anywhere on the map to drop the center point.</b> Click again to move it. Hollow dots show where the search will check. The blue pin is the business.
+            <div class="planbtns"><button type="button" class="btn small primary" id="planRun">Search Now</button><button type="button" class="link" id="planDone">Done</button></div></div>
         </div>
         <p class="attrib" id="attrib"></p>
       </section>
@@ -724,11 +727,12 @@
     if (c) gridPoints(c.lat, c.lng, n, spacingMeters()).forEach(function (pt) { if (pt.r !== mid || pt.c !== mid) items.push({ lat: pt.lat, lng: pt.lng, el: planDot() }); });
     if (biz) items.push({ lat: biz.lat, lng: biz.lng, el: homePin(true) });
     if (c) items.push({ lat: c.lat, lng: c.lng, el: centerPin() });
+    $('planRun').disabled = state.running || !c;
     maps.overlay.setItems(items);
     if (fit && items.length === 1) { maps.map.setCenter({ lat: items[0].lat, lng: items[0].lng }); maps.map.setZoom(13); }
     else if (fit && items.length) {
       var b = new google.maps.LatLngBounds(); items.forEach(function (it) { b.extend({ lat: it.lat, lng: it.lng }); });
-      maps.map.fitBounds(b, { top: 56, right: 48, bottom: ($('plannote').offsetHeight || 0) + 48, left: 48 });
+      maps.map.fitBounds(b, { top: ($('plannote').offsetHeight || 0) + 60, right: 48, bottom: 48, left: 48 });
     }
     maps.fitFor = null;
     setMapNote('');
@@ -861,8 +865,9 @@
       maps.overlay = new GridOverlay(); maps.overlay.setMap(maps.map);
       maps.map.addListener('click', function (e) {
         if (!state.plan || !e || !e.latLng) return;
-        $('centerInput').value = 'Picked on the map';
-        setCenter({ lat: e.latLng.lat(), lng: e.latLng.lng(), label: 'the spot picked on the map', full: 'Picked on the map' }, false);
+        $('centerInput').value = 'Dropped pin';
+        setCenter({ lat: e.latLng.lat(), lng: e.latLng.lng(), label: 'a dropped pin', full: 'Dropped pin' }, false);
+        keepPlanInView();
       });
       setupAutocomplete();
       var layer = $('map');
@@ -988,21 +993,32 @@
   function renderCenterBox() { $('centerBox').hidden = !centerOn(); updateCenterState(); }
   function updateCenterState() {
     var c = state.center, b = state.chosen;
+    var who = (b ? b.name : 'The business') + ' is still the business being tracked.';
     $('centerState').textContent = c
-      ? 'The grid will center on ' + c.label + (hasLoc(b) ? ', ' + offsetText(b, c, $('unit').value) : '') + '. ' + (b ? b.name : 'The business') + ' is still the one being tracked.'
-      : 'Type a place and pick it from the list, or press Pick on the map and click where the grid should go. ' + (b ? b.name : 'The business') + ' is still the one being tracked.';
-    $('pickBtn').textContent = state.plan ? 'Done picking' : 'Pick on the map';
+      ? 'Center point: ' + c.label + (hasLoc(b) ? ', ' + offsetText(b, c, $('unit').value) : '') + '. ' + who
+      : 'Search for a location and pick it from the list, or drop a pin on the map. ' + who;
   }
   function setPickCursor(on) { if (maps.map) maps.map.setOptions({ draggableCursor: on ? 'crosshair' : null }); }
   function setCenter(c, fit) {
     state.center = c;
     $('centerMode').value = 'custom'; renderCenterBox(); setMsg('msg', '');
-    if (maps.ready && !maps.failed) { state.plan = true; setPickCursor(true); renderMap(fit); }
+    if (maps.ready && !maps.failed) { state.plan = true; setPickCursor(true); renderMap(fit); if (fit) showMap(); }
     updateCenterState();
   }
+  function keepPlanInView() {
+    var c = state.center, proj = maps.overlay && maps.overlay.getProjection && maps.overlay.getProjection();
+    if (!c || !proj || !proj.fromLatLngToContainerPixel) return;
+    var n = parseInt($('size').value, 10), pts = gridPoints(c.lat, c.lng, n, spacingMeters());
+    var a = proj.fromLatLngToContainerPixel(new google.maps.LatLng(pts[0].lat, pts[0].lng));
+    var z = proj.fromLatLngToContainerPixel(new google.maps.LatLng(pts[pts.length - 1].lat, pts[pts.length - 1].lng));
+    var w = $('map').clientWidth, h = $('map').clientHeight, top = ($('plannote').offsetHeight || 0) + 24;
+    if (a && z && (a.y < top || a.x < 16 || z.x > w - 16 || z.y > h - 16)) renderMap(true);
+  }
+  function showMap() { var w = document.querySelector('.mapwrap'); if (w && w.scrollIntoView) w.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
   function enterPlan() {
-    if (!maps.ready || maps.failed) { setMsg('msg', 'The map has not loaded, so type a place to center on instead.', 'warn'); return; }
-    state.plan = true; setPickCursor(true); renderMap(true); updateCenterState();
+    if (!maps.ready || maps.failed) { setMsg('msg', 'The map has not loaded, so search for a location instead.', 'warn'); return; }
+    var was = state.plan;
+    state.plan = true; setPickCursor(true); if (!was) renderMap(true); updateCenterState(); showMap();
   }
   function leavePlan() {
     if (!state.plan) return false;
@@ -1024,21 +1040,21 @@
       addUsage('pro', 1);
       var loc = place.location; if (!loc) throw new Error('No location');
       setCenter({ lat: latOf(loc), lng: lngOf(loc), label: it.main || text, full: text }, true);
-    }).catch(function () { setMsg('msg', 'Google could not put that spot on the map. Try another one, or use Pick on the map.', 'err'); });
+    }).catch(function () { setMsg('msg', 'Google could not place that location on the map. Try another one, or drop a pin on the map.', 'err'); });
   }
   function findCenterByText() {
     var text = $('centerInput').value.trim(), key = currentKey();
     if (state.center && text && text === state.center.full) return;
-    if (!text) { setMsg('msg', 'Type a place to center the grid on, such as "downtown Denver".', 'err'); return; }
+    if (!text) { setMsg('msg', 'Type a location to center the grid on, such as a neighborhood, landmark or address.', 'err'); return; }
     if (!key) { setMsg('msg', 'Add a Google key in Settings (gear icon, top right) first.', 'err'); openSettings(); return; }
     if ($('guard').checked && usage().pro + 1 > FREE.pro) { setMsg('msg', 'This month\'s free allowance for lookups is used up. Turn off the guard in Settings to continue anyway.', 'warn'); return; }
     var body = { textQuery: text, pageSize: 1, languageCode: 'en', regionCode: $('bizCountry').value };
     if (hasLoc(state.chosen)) body.locationBias = { circle: { center: { latitude: state.chosen.lat, longitude: state.chosen.lng }, radius: 50000 } };
-    setMsg('msg', 'Finding that spot on Google.');
+    setMsg('msg', 'Finding that location on Google.');
     withRetry(function () { return gcall('places:searchText', 'POST', body, MASK_SPOT, key); }, 2).then(function (res) {
       addUsage('pro', 1);
       var p = (res.places || [])[0];
-      if (!p || !p.location) { setMsg('msg', 'Google could not find that spot. Try a fuller name, or use Pick on the map.', 'err'); return; }
+      if (!p || !p.location) { setMsg('msg', 'Google could not find that location. Try a fuller name, or drop a pin on the map.', 'err'); return; }
       var name = p.displayName && p.displayName.text ? p.displayName.text : text;
       var full = p.formattedAddress && p.formattedAddress.indexOf(name) !== 0 ? name + ', ' + p.formattedAddress : (p.formattedAddress || name);
       $('centerInput').value = full;
@@ -1069,6 +1085,7 @@
   function setBusy(busy) {
     state.running = busy;
     ['findBtn', 'runBtn', 'sampleBtn'].forEach(function (id) { $(id).disabled = busy; });
+    $('planRun').disabled = busy || !state.center; $('planRun').textContent = busy ? 'Searching...' : 'Search Now';
     $('prog').hidden = !busy; if (!busy) { $('progBar').style.width = '0%'; $('progText').textContent = ''; }
   }
   function progress(done, total, text) { $('progBar').style.width = Math.round(100 * done / Math.max(1, total)) + '%'; $('progText').textContent = text; }
@@ -1157,7 +1174,7 @@
     if (!ch) { box.hidden = true; return; }
     box.hidden = false; $('foundName').textContent = ch.name; $('foundAddr').textContent = ch.address;
     $('foundMeta').textContent = (ch.type ? ch.type + '. ' : '') + (ch.rating ? fmt1(ch.rating) + ' stars, ' + ch.reviews + ' Google reviews.' : 'No rating yet.') +
-      (hasLoc(ch) ? '' : ' Google shows no public address, which is normal for a service area business, so center the grid on a spot in step 2.');
+      (hasLoc(ch) ? '' : ' Google shows no public address, which is normal for a service area business, so set a custom center point in step 2.');
     var others = state.candidates.filter(function (c) { return c.id !== ch.id; });
     $('candWrap').hidden = !others.length;
     $('cands').innerHTML = others.map(function (c) { return '<li><button type="button" data-cand="' + esc(c.id) + '"><b>' + esc(c.name) + '</b><span>' + esc(c.address) + '</span></button></li>'; }).join('');
@@ -1169,8 +1186,8 @@
     if (!state.chosen) { setMsg('msg', 'Do step 1 first so the tool knows which business to track.', 'err'); $('bizName').focus(); return; }
     if (!kw) { setMsg('msg', 'Type what a customer would search for, such as "emergency plumber".', 'err'); $('kw').focus(); return; }
     var biz = state.chosen, n = parseInt($('size').value, 10), spacing = spacingMeters(), region = $('bizCountry').value, unit = $('unit').value;
-    if (centerOn() && !state.center) { setMsg('msg', 'Pick the spot to center the grid on first: type a place, or press Pick on the map and click.', 'err'); $('centerInput').focus(); return; }
-    if (!centerOn() && !hasLoc(biz)) { setMsg('msg', 'Google shows no public address for ' + biz.name + ', so choose "Another spot" under Center the grid on and pick one.', 'err'); return; }
+    if (centerOn() && !state.center) { setMsg('msg', 'Set the custom location first: search for a place, or drop a pin on the map.', 'err'); $('centerInput').focus(); return; }
+    if (!centerOn() && !hasLoc(biz)) { setMsg('msg', 'Google shows no public address for ' + biz.name + ', so set Center point to Custom location and choose where the grid goes.', 'err'); return; }
     var center = centerOn() ? { lat: state.center.lat, lng: state.center.lng, label: state.center.label, full: state.center.full || '' } : null;
     var origin = center || biz;
     var problem = budgetProblem(n * n);
@@ -1365,10 +1382,11 @@
   $('centerMode').addEventListener('change', function () {
     renderCenterBox();
     if (!centerOn()) { exitPlan(); return; }
-    if (maps.ready && !maps.failed && (state.center || hasLoc(state.chosen))) enterPlan(); else $('centerInput').focus();
+    $('centerInput').focus();
   });
-  $('pickBtn').addEventListener('click', function () { if (state.plan) exitPlan(); else enterPlan(); });
+  $('pickBtn').addEventListener('click', enterPlan);
   $('planDone').addEventListener('click', exitPlan);
+  $('planRun').addEventListener('click', runScan);
   $('remember').addEventListener('change', function () { if ($('remember').checked) { if (($('apiKey').value || '').trim()) lsSet(LS.key, $('apiKey').value.trim()); } else lsDel(LS.key); keyState(); });
   $('apiKey').addEventListener('change', function () {
     var k = ($('apiKey').value || '').trim();
